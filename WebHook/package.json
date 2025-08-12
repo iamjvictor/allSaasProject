@@ -1,0 +1,34 @@
+{
+  "name": "whatsapp-webhook",
+  "version": "1.0.0",
+  "description": "Webhook para integração WhatsApp com API de IA",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.53.0",
+    "@whiskeysockets/baileys": "^6.7.18",
+    "axios": "^1.6.0",
+    "baileys": "^6.7.18",
+    "bcryptjs": "^3.0.2",
+    "dotenv": "^16.6.1",
+    "qr-image": "^3.2.0",
+    "qrcode": "^1.5.4",
+    "qrcode-terminal": "^0.12.0",
+    "zod": "^4.0.14"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "keywords": [
+    "whatsapp",
+    "webhook",
+    "ai",
+    "api",
+    "baileys"
+  ],
+  "author": "Seu Nome",
+  "license": "MIT"
+}

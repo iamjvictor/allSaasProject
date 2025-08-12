@@ -1,0 +1,5 @@
+# Arquivos de ambiente - NUNCA comitar
+.env
+
+# Pasta de dependências
+/node_modules
