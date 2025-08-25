@@ -9,134 +9,18 @@ const fs = require('fs');
 const deviceManager = new WhatsAppDeviceManager();
 const app = express();
 const userRepository = require('./repository/usersRepository'); // Corrigido para usar o repositório exportado
+const cors = require('cors');
+const authRoutes = require('./routes/authRoutes'); // Importe suas rotas de autenticação
+const roomRoutes = require('./routes/roomRoutes')
+const userRoutes = require('./routes/userRoutes');
 
+
+app.use(cors());
 app.use(express.json());
 
-// 2. Defina o esquema de validação para o corpo da requisição
-const registerSchema = z.object({
-  name: z.string({ required_error: "O nome é obrigatório." }).min(2, "O nome deve ter pelo menos 2 caracteres."),
-  email: z.string({ required_error: "O e-mail é obrigatório." }).email({ message: "Formato de e-mail inválido." }),
-  password: z.string({ required_error: "A senha é obrigatória." }).min(8, "A senha deve ter pelo menos 8 caracteres."),
-  whatsappNumber: z.string({ required_error: "O número do WhatsApp é obrigatório." }).min(10, "Número de WhatsApp inválido."),
-  businessName: z.string().optional(),
-  businessLocation: z.object({
-    address: z.string(),
-    city: z.string(),
-    state: z.string(),
-    zipCode: z.string(),
-  }).optional(),
-  paymentGatewayId: z.string().optional(),
-  pdf_vector: z.object({
-    content: z.string({ required_error: "O conteúdo do PDF (content) é obrigatório dentro de pdf_vector." })
-  }).optional(),
-});
-
-// Helper para garantir que o número de telefone esteja em um formato consistente (apenas dígitos)
-const normalizePhoneNumber = (phone) => phone.replace(/\D/g, '');
-
-
-app.post('/register', async (req, res) => {
-  // Declara a variável no escopo principal da função
-  let insertedUser; 
-
-  try {
-    // 1. Validação e Normalização
-    const validatedData = registerSchema.parse(req.body);
-    const normalizedWhatsAppNumber = normalizePhoneNumber(validatedData.whatsappNumber);
-
-    
-    // 2. Verifica se o usuário já existe
-    const existingUser = await supabase
-      .from('users')
-      .select('id, name, email')
-      .eq('whatsapp_number', normalizedWhatsAppNumber)
-      .single();
-      
-    if (existingUser) {
-      console.log('⚠️ Usuário já existe:', existingUser);
-      return res.status(409).json({
-        error: 'Este número de WhatsApp já está cadastrado.',
-      });
-    }
-    console.log('Dados validados:', existingUser);
-    // 3. Criptografa a senha
-    const hashedPassword = await bcrypt.hash(validatedData.password, 10);
-    const userData = {
-        name: validatedData.name,
-        email: validatedData.email,
-        password: hashedPassword,
-        whatsapp_number: normalizedWhatsAppNumber,
-        business_name: validatedData.businessName ,
-        business_location: validatedData.businessLocation,
-        payment_gateway_id: validatedData.paymentGatewayId,
-        pdf_vector: validatedData.pdf_vector 
-      };
-      console.log('🕵️‍♂️ Objeto exato que será inserido:', JSON.stringify(validatedData, null, 2));
-    // 4. Executa a inserção no banco de dados
-    // O objeto de inserção é montado diretamente aqui
-    console.log('Dados antes do insert:', userData);
-    const { data: user, error: insertError } = await supabase
-      .from('users')
-      .insert(userData);
-      
-
-    // Lança um erro se a inserção falhar, para ser pego pelo catch principal
-    if (insertError) {
-      throw insertError;
-    }
-    
-
-console.log('Resultado do insert:', insertResult);
-    const { data: userReturn, error: selectError } = await supabase
-    .from('users')
-    .select('*')
-    .eq('whatsapp_number', normalizedWhatsAppNumber)
-    .single();
-
-    
-    // Atribui o resultado à variável de escopo mais alto
-    insertedUser = user;
-
-    // 5. Verifica se o usuário foi realmente criado
-    if (!insertedUser || !insertedUser.id) {
-      throw new Error('Erro ao criar usuário - dados não retornados pelo banco');
-    }
-
-    // 6. Configura e conecta o dispositivo
-    const deviceConfig = {
-      id: `device-${normalizedWhatsAppNumber}`,
-      name: `Dispositivo ${validatedData.businessName || validatedData.name}`,
-      user_id: insertedUser.id, // Usa o ID do usuário recém-criado
-      whatsappNumber: normalizedWhatsAppNumber,
-    };
-    const qrCodeBase64 = await deviceManager.connectDevice(deviceConfig);
-
-    if (!qrCodeBase64) {
-      return res.status(500).json({ error: 'Não foi possível gerar o QR Code a tempo.' });
-    }
-
-    // 7. Retorna a resposta de sucesso
-    res.status(201).json({
-      message: 'Usuário registrado com sucesso! Escaneie o QR Code para conectar o WhatsApp.',
-      user: { id: insertedUser.id, email: insertedUser.email, name: insertedUser.name },
-      qrCodeBase64
-    });
-
-  } catch (error) {
-    // Um único bloco catch para tratar todos os erros (validação, banco, etc.)
-    console.error('❌ Erro detalhado no endpoint /register:', error);
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({
-        error: 'Dados inválidos.',
-        details: error.flatten().fieldErrors,
-      });
-    }
-    res.status(500).json({
-      error: 'Ocorreu um erro interno no servidor.',
-      details: error.message
-    });
-  }
-});
+app.use('/api/auth', authRoutes);
+app.use('/api/rooms', roomRoutes);
+app.use('/api/users', userRoutes);
 
 app.get('/qrcode/:whatsappNumber', async (req, res) => {
   const { whatsappNumber } = req.params;

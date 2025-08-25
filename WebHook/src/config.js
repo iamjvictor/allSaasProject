@@ -18,7 +18,7 @@ const config = {
 
   // Configurações do Supabase
   supabaseUrl: process.env.SUPABASE_URL,
-  supabaseKey: process.env.SUPABASE_KEY,
+  supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
 };
 
 module.exports = config; 
