@@ -1,0 +1,14 @@
+const express = require('express');
+const router = express.Router();
+const multer = require('multer');
+const UploadController = require('../controllers/uploadController');
+
+const uploadController = new UploadController();
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
+
+// Endpoint: POST /api/uploads/document
+// O 'upload.array('pdfFile')' é o middleware que processa o arquivo
+router.post('/document', upload.array('pdfFile', 3), uploadController.uploadDocuments);
+
+module.exports = router;

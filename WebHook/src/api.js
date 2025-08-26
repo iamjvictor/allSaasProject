@@ -13,6 +13,7 @@ const cors = require('cors');
 const authRoutes = require('./routes/authRoutes'); // Importe suas rotas de autenticação
 const roomRoutes = require('./routes/roomRoutes')
 const userRoutes = require('./routes/userRoutes');
+const uploadRoutes = require('./routes/uploadRoutes');
 
 
 app.use(cors());
@@ -21,6 +22,7 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/uploads', uploadRoutes);
 
 app.get('/qrcode/:whatsappNumber', async (req, res) => {
   const { whatsappNumber } = req.params;
