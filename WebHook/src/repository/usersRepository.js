@@ -54,6 +54,33 @@ class UserRepository {
     if (error) throw error;
     return data;
   }
+
+  async updateStatus(userId, newStatus) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ status: newStatus, updated_at: new Date() })
+      .eq('id', userId)
+      .select('status') // Retorna apenas o novo status para confirmação
+      .single();
+    
+    if (error) {
+      throw error;
+    }
+    return data;
+  }
+
+  async getProfile(userId) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (error) {
+      throw error;
+    }
+    return data;
+  }
 }
 
-module.exports = new UserRepository();
+    module.exports = new UserRepository();
