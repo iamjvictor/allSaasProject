@@ -72,7 +72,7 @@ class UserRepository {
   async getProfile(userId) {
     const { data, error } = await supabase
       .from('profiles')
-      .select('*')
+      .select()
       .eq('id', userId)
       .single();
 
@@ -83,4 +83,4 @@ class UserRepository {
   }
 }
 
-    module.exports = new UserRepository();
+  module.exports = new UserRepository();

@@ -40,6 +40,7 @@ class UserController {
       if (authError) return res.status(401).json({ message: "Token inválido." });
 
       const profile = await UserRepository.getProfile(user.id);
+      
       res.status(200).json({ profile });
 
     } catch (err) {
