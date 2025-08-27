@@ -48,6 +48,38 @@ class UserController {
       res.status(500).json({ message: "Erro interno do servidor." });
     }
   }
+  async updateProfile(req, res) {
+    try {
+      const jwt = req.headers.authorization?.split(' ')[1];
+      if (!jwt) return res.status(401).json({ message: "Não autorizado." });
+
+      const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
+      if (authError) return res.status(401).json({ message: "Token inválido." });
+
+      const { full_name, business_name, whatsapp_number, address, city, state, zip_code } = req.body;
+
+      // Validação de todos os campos
+      if (!full_name || !business_name || !whatsapp_number || !address || !city || !state || !zip_code) {
+        return res.status(400).json({ message: "Todos os campos são obrigatórios." });
+      }
+
+      const updatedProfile = await UserRepository.updateProfile(user.id, {
+        full_name,
+        business_name,
+        whatsapp_number,
+        address,
+        city,
+        state,
+        zip_code
+      });
+
+      res.status(200).json({ message: "Perfil atualizado com sucesso!", profile: updatedProfile });
+
+    } catch (err) {
+      console.error("Erro ao atualizar perfil:", err);
+      res.status(500).json({ message: "Erro interno do servidor." });
+    }
+  }
 }
 
 module.exports = UserController;

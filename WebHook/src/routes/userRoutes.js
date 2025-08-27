@@ -6,7 +6,10 @@ const userController = new UserController();
 
 router.get('/profile', userController.getProfile);
 
+
 // Nova rota para atualizar o status
 router.post('/update-status', userController.updateStatus);
+
+router.put('/update-profile', userController.updateProfile);
 
 module.exports = router;

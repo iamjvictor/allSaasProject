@@ -81,6 +81,21 @@ class UserRepository {
     }
     return data;
   }
+
+  async updateProfile(userId, profileData) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(profileData)
+      .eq('id', userId)
+      .select()
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return data;
+  }
 }
 
   module.exports = new UserRepository();
