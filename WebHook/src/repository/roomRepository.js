@@ -58,6 +58,19 @@ class RoomRepository {
     // 4. Retorna o caminho do arquivo para o controller
     return filePath;
   }
+  async getByUserId(userId) {
+    const { data, error } = await supabase
+      .from('room_types')
+      .select('*')
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error("Erro ao buscar quartos do usuário:", error);
+      throw error;
+    }
+
+    return data;
+  }
 }
 
 module.exports = new RoomRepository();

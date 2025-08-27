@@ -116,6 +116,27 @@ class UploadController {
       res.status(500).json({ message: "Erro interno do servidor ao fazer upload." });
     }
   }
+
+  async getUploadedFiles(req, res) {
+    const jwt = req.headers.authorization?.split(' ')[1];
+    if (!jwt) {
+      return res.status(401).json({ message: "Acesso negado. Token não fornecido." });
+    }
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
+    if (authError) {
+      return res.status(401).json({ message: "Token inválido." });
+    }
+
+    try {
+      const files = await PdfRepository.getByUserId(user.id);
+      res.status(200).json({ data: files });
+    } catch (error) {
+      console.error("Erro ao buscar arquivos do usuário:", error);
+      res.status(500).json({ message: "Erro interno do servidor." });
+    }
+  }
+
 }
 
 module.exports =  UploadController;

@@ -37,6 +37,20 @@ class PdfRepository {
     }
     return data;
   }
+
+  async getByUserId(userId) {
+    const { data, error } = await supabase
+      .from('documents')
+      .select('*')
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error("Erro ao buscar documentos do usuário:", error);
+      throw error;
+    }
+
+    return data;
+  }
 }
 
 module.exports = new PdfRepository();

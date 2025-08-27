@@ -19,6 +19,22 @@ class RoomController {
       res.status(500).json({ message: "Erro interno do servidor." });
     }
   }
+
+  async getRooms(req, res) {
+    try {
+      const jwt = req.headers.authorization?.split(' ')[1];
+      if (!jwt) return res.status(401).json({ message: "Não autorizado." });
+      
+      const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
+      if (authError) return res.status(401).json({ message: "Token inválido." });
+
+      const rooms = await RoomRepository.getByUserId(user.id);
+      res.status(200).json({ data: rooms });
+
+    } catch (err) {
+      res.status(500).json({ message: "Erro interno do servidor." });
+    }
+  }
 }
 
 module.exports =  RoomController;
