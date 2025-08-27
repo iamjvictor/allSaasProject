@@ -1,6 +1,7 @@
 const supabase = require('../clients/supabase-client');
 const pdf = require('pdf-parse');
 const PdfRepository = require('../repository/pdfRepository');
+const roomRepository = require('../repository/roomRepository');
 
 
 
@@ -71,6 +72,48 @@ class UploadController {
     } catch (err) {
       console.error("Erro no upload de documentos:", err);
       res.status(500).json({ message: "Erro interno do servidor." });
+    }
+  }
+  async uploadRoomPhotos(req, res) {
+   // 1. FAZEMOS A AUTENTICAÇÃO AQUI DENTRO
+      const jwt = req.headers.authorization?.split(' ')[1];
+      if (!jwt) {
+        return res.status(401).json({ message: "Acesso negado. Token não fornecido." });
+      }
+      
+      const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
+      if (authError) {
+        return res.status(401).json({ message: "Token inválido." });
+      }
+
+      // 2. AGORA, com o 'user' garantido, continuamos a lógica
+      const files = req.files;
+      if (!files || files.length === 0) {
+        return res.status(400).json({ message: "Nenhum arquivo enviado." });
+      }
+    try {
+      // 1. Usamos Promise.all para fazer todos os uploads em paralelo
+      const uploadPromises = files.map(file => {
+        const imageName = sanitizeFilename(file.originalname);
+        return roomRepository.uploadImagesToBucket(user.id, file.buffer, imageName);
+      });
+
+      // 'filePaths' será um array com os caminhos retornados, ex: ['id/123_foto1.jpg', 'id/456_foto2.png']
+      const filePaths = await Promise.all(uploadPromises);
+
+      // 2. Com os caminhos em mãos, pegamos as URLs públicas
+      const urls = filePaths.map(path => {
+        const { data } = supabase.storage.from('room_images').getPublicUrl(path);
+        return data.publicUrl;
+      });
+      
+      // 3. Retorna a lista de URLs para o frontend
+      res.status(200).json({ message: "Upload bem-sucedido!", urls });
+      return urls;
+
+    } catch (err) {
+      console.error("Erro no upload das fotos do quarto:", err);
+      res.status(500).json({ message: "Erro interno do servidor ao fazer upload." });
     }
   }
 }

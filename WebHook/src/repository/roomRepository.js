@@ -21,7 +21,7 @@ class RoomRepository {
       // IMPORTANTE: Por enquanto, as fotos não serão salvas.
       // A lógica de upload de arquivos é separada e mais complexa.
       // Vamos focar em salvar os dados de texto primeiro.
-      photos: [], 
+      photos: room.photos || [], // Pode ser um array vazio
     }));
 
     const { data, error } = await supabase
@@ -35,6 +35,28 @@ class RoomRepository {
     }
 
     return data;
+  }
+  
+   async uploadImagesToBucket(userId, file, imageName) {
+   
+
+    // 2. Crie o caminho usando o nome limpo
+    const filePath = `${userId}/${Date.now()}_${imageName}`;
+
+    // 3. Faz o upload para o bucket correto
+    const { error } = await supabase.storage
+      .from('room_images') // Bucket específico para imagens de quartos
+      .upload(filePath, file.buffer, {
+        contentType: file.mimetype,
+      });
+
+    if (error) {
+      console.error("ERRO DETALHADO DO SUPABASE STORAGE:", error);
+      throw new Error(`Falha no upload da imagem para o Storage: ${error.message}`);
+    }
+
+    // 4. Retorna o caminho do arquivo para o controller
+    return filePath;
   }
 }
 

@@ -10,5 +10,6 @@ const upload = multer({ storage: storage });
 // Endpoint: POST /api/uploads/document
 // O 'upload.array('pdfFile')' é o middleware que processa o arquivo
 router.post('/document', upload.array('pdfFile', 3), uploadController.uploadDocuments);
+router.post('/room_photos', upload.array('roomPhotos'), uploadController.uploadRoomPhotos);
 
 module.exports = router;
