@@ -28,7 +28,7 @@ class RoomController {
       const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
       if (authError) return res.status(401).json({ message: "Token inválido." });
 
-      const rooms = await RoomRepository.getByUserId(user.id);
+      const rooms = await RoomRepository.getRoomsByUserId(user.id);
       res.status(200).json({ data: rooms });
 
     } catch (err) {

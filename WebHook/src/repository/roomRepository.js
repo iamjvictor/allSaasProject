@@ -58,7 +58,7 @@ class RoomRepository {
     // 4. Retorna o caminho do arquivo para o controller
     return filePath;
   }
-  async getByUserId(userId) {
+  async getRoomsByUserId(userId) {
     const { data, error } = await supabase
       .from('room_types')
       .select('*')
