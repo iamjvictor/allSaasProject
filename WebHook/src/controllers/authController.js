@@ -2,6 +2,9 @@
 const supabase = require('../clients/supabase-client.js');
 const { registerSchema } = require('../validators/authValidator');
 
+const userRepository = require('../repository/usersRepository'); 
+
+
 
 class AuthController {
   async register(req, res) {
@@ -56,6 +59,77 @@ class AuthController {
       res.status(500).json({ message: "Erro interno do servidor." });
     }
   }
+  async googleAuthCallback(req, res) {
+        // Pega o código e o 'state' (que é nosso JWT) dos parâmetros da URL
+        const { code, state } = req.query; 
+
+        // O 'state' agora é o nosso JWT!
+        const jwt = state;
+
+        if (!jwt) {
+            return res.status(401).json({ message: "Identificação do usuário não encontrada no callback." });
+        }
+        
+        // Autentica o usuário usando o JWT recebido pelo 'state'
+        const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
+        if (authError) {
+            return res.status(401).json({ message: "Token de identificação inválido." });
+        }
+
+        // Verifica se o código de autorização do Google foi recebido
+        if (!code) {
+            return res.redirect(`${process.env.FRONTEND_URL}/dashboard?error=google_auth_failed`);
+        }
+
+        const userId = user.id;
+
+        // AGORA SIM, ELE VAI ENTRAR NO TRY!
+        try {
+            // 1. Trocar o código por tokens
+            const response = await fetch('https://oauth2.googleapis.com/token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    code,
+                    client_id: process.env.GOOGLE_CLIENT_ID,
+                    client_secret: process.env.GOOGLE_CLIENT_SECRET,
+                    redirect_uri: `http://localhost:4000/api/auth/google/callback`,
+                    grant_type: 'authorization_code',
+                }),
+            });
+
+            const tokens = await response.json();
+
+            if (tokens.error) {
+                // Adiciona um log mais detalhado do erro do Google
+                console.error("Erro do Google ao trocar token:", tokens.error_description);
+                throw new Error(tokens.error_description || 'Erro ao obter tokens do Google.');
+            }
+
+            const { access_token, refresh_token, expires_in } = tokens;
+
+            // Instancie seu repositório para usar os métodos
+          
+
+            // 2. Salvar os tokens no banco de dados
+            await userRepository.saveGoogleTokens({
+                userId,
+                accessToken: access_token,
+                refreshToken: refresh_token,
+                expiresIn: expires_in,
+            });
+
+            // 3. Atualizar o status do usuário
+            await userRepository.updateStatus(userId, 'activeAndConnected');
+
+            // 4. Redirecionar para o dashboard com sucesso
+            return res.redirect(`${process.env.FRONTEND_URL}/dashboard?connected=true`);
+
+        } catch (error) {
+            console.error('Falha no callback do Google Auth:', error);
+            return res.redirect(`${process.env.FRONTEND_URL}/dashboard?error=google_auth_failed`);
+        }
+    }
 }
 
 module.exports =  AuthController;

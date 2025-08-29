@@ -9,6 +9,8 @@ const authController = new AuthController();
 //    O Express passará 'req' e 'res' automaticamente para a sua função.
 router.post('/register', authController.register);
 
+router.get('/google/callback', authController.googleAuthCallback);
+
 // Você pode adicionar outras rotas de autenticação aqui depois
 // router.post('/login', authController.login);
 
