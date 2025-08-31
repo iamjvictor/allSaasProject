@@ -1,4 +1,4 @@
-const supabase = require('../config/supabaseClient');
+const supabase = require('../clients/supabase-client');
 
 class LeadsRepository {
 
@@ -102,6 +102,17 @@ class LeadsRepository {
       .update({ status: newStatus })
       .match({ user_id: userId, contact_whatsapp: whatsappNumber })
       .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
+
+  async findLeadById(leadId) {
+    const { data, error } = await supabase
+      .from('leads')
+      .select('*')
+      .eq('id', leadId)
       .single();
 
     if (error) throw error;

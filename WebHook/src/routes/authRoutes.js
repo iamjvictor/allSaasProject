@@ -11,6 +11,12 @@ router.post('/register', authController.register);
 
 router.get('/google/callback', authController.googleAuthCallback);
 
+router.get('/google/check', authController.checkGoogleIntegration);
+
+// ...
+//router.get('/google/auth', authController.redirectToGoogleAuth);
+// ...
+
 // Você pode adicionar outras rotas de autenticação aqui depois
 // router.post('/login', authController.login);
 

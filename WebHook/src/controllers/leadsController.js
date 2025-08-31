@@ -1,4 +1,4 @@
-const LeadsRepository = require('../repositories/leadsRepository');
+const LeadsRepository = require('../repository/leadsRepository');
 
 class LeadsController {
 

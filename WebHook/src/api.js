@@ -15,6 +15,8 @@ const roomRoutes = require('./routes/roomRoutes')
 const userRoutes = require('./routes/userRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
 const leadsRoutes = require('./routes/leadsRoutes');
+const bookingRoutes = require('./routes/booksRoutes');
+const integrationRoutes = require('./routes/integrationRoutes');
 
 
 app.use(cors());
@@ -25,6 +27,8 @@ app.use('/api/rooms', roomRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/leads', leadsRoutes);
+app.use('/api/bookings', bookingRoutes);
+app.use('/api/integrations', integrationRoutes);
 
 app.get('/qrcode/:whatsappNumber', async (req, res) => {
   const { whatsappNumber } = req.params;

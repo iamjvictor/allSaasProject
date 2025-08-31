@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const LeadsController = require('../controllers/leadsController');
 
-const leadsController = new LeadsController();
+const leadsController =  LeadsController;
 
 router.get('/findORcreate', leadsController.findOrCreate);
 

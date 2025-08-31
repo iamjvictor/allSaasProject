@@ -100,7 +100,7 @@ class UserRepository {
   }
 
   //Google calendar
-  async saveGoogleTokens({ userId, accessToken, refreshToken, expiresIn }) {
+  async saveGoogleTokens({ userId, accessToken, refreshToken, expiresIn, googleEmail }) {
         const expiresAt = new Date(Date.now() + expiresIn * 1000);
 
         // 'upsert' é perfeito aqui: ele cria se não existir ou atualiza se o user_id já tiver uma linha
@@ -108,9 +108,10 @@ class UserRepository {
             .from('google_integrations') // Nome da tabela que criamos
             .upsert({
                 user_id: userId,
-                access_token: encrypt(accessToken),     // CRIPTOGRAFE SEMPRE!
-                refresh_token: encrypt(refreshToken),   // CRIPTOGRAFE SEMPRE!
+                access_token: accessToken,     // CRIPTOGRAFE SEMPRE!
+                refresh_token: refreshToken,   // CRIPTOGRAFE SEMPRE!
                 expires_at: expiresAt.toISOString(),
+                google_email: googleEmail,
             }, {
                 onConflict: 'user_id' // Informa ao Supabase qual coluna usar para detectar conflitos
             });
