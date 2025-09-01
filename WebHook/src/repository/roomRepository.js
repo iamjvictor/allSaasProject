@@ -21,7 +21,8 @@ class RoomRepository {
       // IMPORTANTE: Por enquanto, as fotos não serão salvas.
       // A lógica de upload de arquivos é separada e mais complexa.
       // Vamos focar em salvar os dados de texto primeiro.
-      photos: room.photos || [], // Pode ser um array vazio
+      photos: room.photos || [], 
+      total_quantity: room.totalQuantity || 0
     }));
 
     const { data, error } = await supabase
@@ -67,6 +68,57 @@ class RoomRepository {
     if (error) {
       console.error("Erro ao buscar quartos do usuário:", error);
       throw error;
+    }
+
+    return data;
+  }
+  async update(roomId, roomData) {
+    const { id, user_id, created_at, ...dataToUpdate } = roomData; // Remove campos que não devem ser atualizados
+
+    const { data, error } = await supabase
+      .from('room_types')
+      .update(dataToUpdate)
+      .eq('id', roomId)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Falha ao atualizar o quarto: ${error.message}`);
+    }
+    return data;
+  }
+
+  async findByIdAndUserId(roomId, userId) {
+    const { data, error } = await supabase
+      .from('room_types')
+      .select('*')
+      .eq('id', roomId)
+      .eq('user_id', userId) // A condição de segurança chave
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      throw error;
+    }
+    // Retorna 'data' (o quarto) se encontrado, ou 'null' se não.
+    return data;
+  }
+  async deleteById(roomId, userId) {
+    const { data, error } = await supabase
+      .from('room_types')
+      .delete()
+      .match({ id: roomId, user_id: userId }) // CONDIÇÃO DUPLA: apaga somente se o ID do quarto E o ID do dono baterem.
+      .select()
+      .single();
+
+    if (error) {
+      console.error(`Erro ao deletar o quarto ${roomId}:`, error);
+      throw new Error(`Falha ao deletar o quarto: ${error.message}`);
+    }
+    
+    // Se 'data' for nulo, significa que nenhum quarto foi encontrado (e deletado)
+    // com aquela combinação de roomId e userId.
+    if (!data) {
+        throw new Error("Quarto não encontrado ou acesso não permitido.");
     }
 
     return data;

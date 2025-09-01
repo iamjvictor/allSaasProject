@@ -48,18 +48,17 @@ class GoogleCalendarService {
         **Hóspede:** ${eventDetails.guest_name || 'Não informado'}
         **Contato (WhatsApp):** ${eventDetails.lead_whatsapp}
         **Contato (Email):** ${eventDetails.lead_email || 'Não informado'}
+        **Check-in:** ${eventDetails.check_in_date}
+        **Check-out:** ${eventDetails.check_out_date}
         **Valor Total:** R$ ${eventDetails.total_price}
         --------------------------------
         ID da Reserva no Sistema: ${eventDetails.booking_id}
       `,
       start: {
-        // A API do Google espera datas no formato ISO 8601
-        dateTime: new Date(eventDetails.check_in_date).toISOString(),
-        timeZone: 'America/Sao_Paulo', // Considere tornar isso configurável no futuro
+        date: eventDetails.check_in_date,
       },
       end: {
-        dateTime: new Date(eventDetails.check_out_date).toISOString(),
-        timeZone: 'America/Sao_Paulo',
+        date: eventDetails.check_out_date,
       },
       // Adiciona o email do hóspede como um convidado no evento, se existir
       attendees: eventDetails.lead_email ? [{ email: eventDetails.lead_email }] : [],

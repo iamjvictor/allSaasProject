@@ -88,7 +88,7 @@ class BookingController{
         try {
         // O webhook do Stripe nos enviará o ID da intenção de pagamento
         //const { paymentIntentId } = req.body;
-        const paymentIntentId = "123456"
+        const paymentIntentId = "1234567"
 
         // 1. Encontra a reserva pendente no nosso banco de dados usando o ID do pagamento
         const pendingBooking = await BookingRepository.findByPaymentId(paymentIntentId);
