@@ -56,6 +56,28 @@ class LeadsRepository {
     console.log(`Novo lead criado: ${newLead.id}`);
     return newLead;
   }
+
+  async createAnonymousLead(userId, leadName = 'Hóspede (Calendário)') {
+    // Usamos um valor único e descritivo para o WhatsApp para evitar conflitos
+    const placeholderWhatsapp = `google_event_${Date.now()}`;
+
+    const { data: newLead, error } = await supabase
+      .from('leads')
+      .insert({
+        user_id: userId,
+        contact_whatsapp: placeholderWhatsapp,
+        name: leadName,
+        status: 'quente', // Já é um lead quente, pois tem uma reserva
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Erro ao criar lead anônimo:", error);
+      throw new Error("Falha ao criar lead anônimo para reserva externa.");
+    }
+    return newLead;
+  }
   
   // No futuro, você adicionará outras funções aqui, como:
  // --- NOVAS FUNÇÕES DE ATUALIZAÇÃO ---

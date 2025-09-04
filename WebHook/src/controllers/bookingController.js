@@ -18,10 +18,10 @@ class BookingController{
         const {
             user_id,
             lead_whatsapp_number,
-            room_type_id, 
+            room_type_id, //ela deve re
             check_in_date, 
             check_out_date,
-            total_price 
+            total_price //calcular isso, buscando a diaria do quarto e multiplicando pela quantidade de diarias
         } = req.body;
 
         // 1. Encontra ou cria o lead para garantir que ele existe
@@ -148,6 +148,34 @@ class BookingController{
             res.status(500).json({ message: "Erro interno do servidor." });
         }
     }
+
+    async checkAvailability(req, res) {
+    try {
+      // Os parâmetros vêm da URL, ex: /availability?roomTypeId=1&...
+      const { roomTypeId, checkInDate, checkOutDate } = req.query;
+
+      if (!roomTypeId || !checkInDate || !checkOutDate) {
+        return res.status(400).json({ message: "Parâmetros roomTypeId, checkInDate e checkOutDate são obrigatórios." });
+      }
+
+      const availableQuantity = await BookingRepository.checkAvailability(
+        parseInt(roomTypeId, 10),
+        checkInDate,
+        checkOutDate
+      );
+      
+      res.status(200).json({ 
+        roomTypeId,
+        checkInDate,
+        checkOutDate,
+        availableQuantity,
+      });
+
+    } catch (err) {
+      console.error("Erro no controller ao checar disponibilidade:", err);
+      res.status(500).json({ message: err.message || "Erro interno do servidor." });
+    }
+  }
 }
   // Futuramente, você pode adicionar outros métodos aqui, como:
   // async cancelBooking(req, res) { ... }

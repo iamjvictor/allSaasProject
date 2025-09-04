@@ -10,10 +10,11 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.53.0",
     "@whiskeysockets/baileys": "^6.7.18",
-    "axios": "^1.6.0",
+    "axios": "^1.11.0",
     "baileys": "^6.7.18",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
+    "date-fns": "^4.1.0",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
     "googleapis": "^159.0.0",

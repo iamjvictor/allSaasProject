@@ -16,6 +16,18 @@ class GoogleRepository {
     }
     return data;
   }
+async deleteGoogleTokens(userId) {
+    const { error } = await supabase
+      .from('google_integrations')
+      .delete()
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error("Erro ao deletar tokens do Google:", error);
+      throw error;
+    }
+    return { success: true };
+  }
 
   async hasGoogleIntegration(userId) {
     const { data, error } = await supabase
@@ -32,6 +44,37 @@ class GoogleRepository {
     return !!data; // Converte o resultado (objeto ou null) para um booleano (true ou false)
   }
 
- 
+  // Em src/repositories/integrationRepository.js
+
+
+  // ...
+
+  // Função para buscar a integração completa, incluindo os IDs do watch
+  async getGoogleIntegration(googleEmail) {
+    const { data, error } = await supabase
+      .from('google_integrations')
+      .select('*')
+      .eq('google_email', googleEmail)
+      .single();
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
+  }
+
+  // Função para salvar as informações da nova vigilância
+  async updateWatchInfo(userId, resourceId, expiration) {
+    const expirationDate = new Date(parseInt(expiration));
+    const { error } = await supabase
+      .from('google_integrations')
+      .update({
+        google_watch_resource_id: resourceId,
+        google_watch_expiration: expirationDate.toISOString(),
+      })
+      .eq('user_id', userId);
+    
+    if (error) throw error;
+  }
 }
+
+ 
+
 module.exports = new GoogleRepository();

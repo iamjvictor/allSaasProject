@@ -9,7 +9,7 @@ const oauth2Client = new google.auth.OAuth2(
       process.env.GOOGLE_CLIENT_ID,
       process.env.GOOGLE_CLIENT_SECRET     
     );
-
+const GoogleCalendarService = require('../services/googleCalendarService');
 
 class AuthController {
    
@@ -86,6 +86,7 @@ class AuthController {
         // Verifica se o código de autorização do Google foi recebido
         if (!code) {
             return res.redirect(`${process.env.FRONTEND_URL}/dashboard?error=google_auth_failed`);
+            
         }
 
         const userId = user.id;
@@ -143,6 +144,7 @@ class AuthController {
                 expiresIn: expires_in,
                 googleEmail: googleEmail,
             });
+            await GoogleCalendarService.watchCalendar(userId, googleEmail);
 
             // 3. Atualizar o status do usuário
             await userRepository.updateStatus(userId, 'activeAndConnected');
