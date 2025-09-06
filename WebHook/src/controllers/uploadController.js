@@ -136,6 +136,20 @@ class UploadController {
       res.status(500).json({ message: "Erro interno do servidor." });
     }
   }
+  async getDocumentsForAI(req, res) {
+    try {
+      const { userId } = req.body;
+      if (!userId) {
+        return res.status(400).json({ message: "O ID do usuário (userId) é obrigatório." });
+      }
+
+      const documents = await DocumentRepository.findAllByUserId(userId);
+      res.status(200).json({ data: documents });
+    } catch (err) {
+      console.error("Erro ao buscar documentos para a IA:", err);
+      res.status(500).json({ message: "Erro interno do servidor." });
+    }
+  }
 
 }
 

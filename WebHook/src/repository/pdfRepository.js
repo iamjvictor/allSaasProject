@@ -51,6 +51,17 @@ class PdfRepository {
 
     return data;
   }
+  async findAllByUserId(userId) {
+    const { data, error } = await supabase
+      .from('documents')
+      .select('file_name, content') // Pega apenas o nome e o conteúdo de texto
+      .eq('user_id', userId);
+
+    if (error) {
+      throw new Error(`Falha ao buscar documentos: ${error.message}`);
+    }
+    return data;
+  }
 }
 
 module.exports = new PdfRepository();

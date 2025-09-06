@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.53.0",
-    "@whiskeysockets/baileys": "^6.7.18",
+    "@whiskeysockets/baileys": "^6.7.19",
     "axios": "^1.11.0",
     "baileys": "^6.7.18",
     "bcryptjs": "^3.0.2",

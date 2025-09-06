@@ -36,6 +36,23 @@ class RoomController {
     }
   }
 
+  async getRoomsForAI(req, res) {
+    try {
+      // O ID do hotel virá no corpo da requisição da IA
+      const { userId } = req.body; 
+      if (!userId) {
+        return res.status(400).json({ message: "O ID do usuário (userId) é obrigatório." });
+      }
+
+      const rooms = await RoomRepository.getRoomsByUserId(userId);
+      res.status(200).json({ data: rooms });
+
+    } catch (err) {
+      console.error("Erro ao buscar quartos para a IA:", err);
+      res.status(500).json({ message: "Erro interno do servidor." });
+    }
+  }
+
   async updateRoom(req, res) {
     try {
       // 1. Autenticação (como você já tem)
