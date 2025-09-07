@@ -15,14 +15,14 @@ class RoomRepository {
       capacity: room.capacity,
       privacy: room.privacy,
       bathroom: room.bathroom,
-      daily_rate: room.dailyRate,
+      daily_rate: room.daily_rate,
       beds: room.beds,
       amenities: room.amenities,
       // IMPORTANTE: Por enquanto, as fotos não serão salvas.
       // A lógica de upload de arquivos é separada e mais complexa.
       // Vamos focar em salvar os dados de texto primeiro.
       photos: room.photos || [], 
-      total_quantity: room.totalQuantity || 0
+      total_quantity: room.total_quantity || 0
     }));
 
     const { data, error } = await supabase

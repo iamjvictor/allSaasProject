@@ -11,6 +11,7 @@ class RoomController {
       if (authError) return res.status(401).json({ message: "Token inválido." });
 
       const roomTypesData = req.body; // O array de quartos
+      
       const newRooms = await RoomRepository.createMany(user.id, roomTypesData);
 
       res.status(201).json({ message: "Quartos cadastrados com sucesso!", data: newRooms });

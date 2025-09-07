@@ -1,5 +1,13 @@
-# Arquivos de ambiente - NUNCA comitar
-.env
 
-# Pasta de dependências
-/node_modules
+
+# Arquivos de ambiente - NUNCA comitar
+# Isso vai ignorar QUALQUER arquivo .env em QUALQUER subpasta
+**/.env
+**/.env.local
+
+# Pasta de sessões do Baileys
+**/.sessions/
+
+# Pastas de dependências
+# Isso vai ignorar QUALQUER pasta node_modules em QUALQUER subpasta
+**/node_modules/
