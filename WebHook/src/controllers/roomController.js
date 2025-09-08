@@ -38,9 +38,8 @@ class RoomController {
   }
 
   async getRoomsForAI(req, res) {
-    try {
-      // O ID do hotel virá no corpo da requisição da IA
-      const { userId } = req.body; 
+     try {
+      const userId = req.headers['x-user-id']; 
       if (!userId) {
         return res.status(400).json({ message: "O ID do usuário (userId) é obrigatório." });
       }

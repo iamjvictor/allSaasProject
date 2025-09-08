@@ -2,6 +2,9 @@ const supabase = require('../clients/supabase-client');
 const pdf = require('pdf-parse');
 const PdfRepository = require('../repository/pdfRepository');
 const roomRepository = require('../repository/roomRepository');
+const pdfRepository = require('../repository/pdfRepository');
+const documentChunksRepository = require('../repository/documentChunksRepository');
+const axios = require('axios');
 
 
 
@@ -64,9 +67,50 @@ class UploadController {
       // 3. Passamos a lista COMPLETA para o repositório, que só precisa salvar.
       const savedDocuments = await PdfRepository.saveManyPdfRecords(documentsToSave);
 
-      res.status(200).json({ 
+      let allChunksToInsert = []; // Array para acumular chunks de todos os PDFs
+
+    for (const doc of savedDocuments) {
+      const fullText = doc.content; // Pega o texto que já extraímos
+      const documentId = doc.id;   // Pega o ID do documento que acabamos de salvar
+
+      if (!fullText || !fullText.trim()) {
+        console.warn(`Documento ${documentId} não possui texto, pulando a indexação.`);
+        continue; // Pula para o próximo documento
+      }
+
+      console.log(`🏭 Enviando texto do documento ${documentId} para a fábrica de embeddings...`);
+      
+      // Chama a API de IA para gerar os chunks vetorizados
+      const iaResponse = await axios.post(
+        `${process.env.IA_BASE_URL}/index-document`,
+        { full_text: fullText }
+      );
+      const chunksWithEmbeddings = iaResponse.data;
+
+      // Adiciona os metadados (user_id, document_id) a cada chunk
+      const processedChunks = chunksWithEmbeddings.map(chunk => ({
+        ...chunk,
+        user_id: user.id,
+        document_id: documentId,
+      }));
+      
+      // Adiciona os chunks processados deste documento à lista geral
+      allChunksToInsert.push(...processedChunks);
+    }
+    
+    // --- ETAPA 3: SALVAR TODOS OS CHUNKS DE UMA VEZ ---
+    if (allChunksToInsert.length > 0) {
+      console.log(`💾 Salvando um total de ${allChunksToInsert.length} chunks no banco de dados...`);
+      await documentChunksRepository.createMany(allChunksToInsert);
+      console.log('✅ Chunks salvos com sucesso!');
+    }
+
+    
+
+      res.status(201).json({ 
         message: "Arquivos enviados e processados com sucesso!", 
-        documents: savedDocuments 
+        documents: savedDocuments,
+        totalChunksCreated: allChunksToInsert.length
       });
 
     } catch (err) {
@@ -138,12 +182,13 @@ class UploadController {
   }
   async getDocumentsForAI(req, res) {
     try {
-      const { userId } = req.body;
+      const userId = req.headers['x-user-id']; 
       if (!userId) {
         return res.status(400).json({ message: "O ID do usuário (userId) é obrigatório." });
       }
 
-      const documents = await DocumentRepository.findAllByUserId(userId);
+      const documents = await pdfRepository.findAllByUserId(userId);
+      
       res.status(200).json({ data: documents });
     } catch (err) {
       console.error("Erro ao buscar documentos para a IA:", err);

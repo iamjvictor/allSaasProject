@@ -16,4 +16,5 @@ router.post('/get-content', apiAuthMiddleware, uploadController.getDocumentsForA
 
 router.get('/getdocuments', uploadController.getUploadedFiles);
 
+
 module.exports = router;

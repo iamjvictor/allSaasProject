@@ -10,13 +10,6 @@ const leadsRepository = require('./leadsRepository');
 
 class BookingRepository {
 
-  /**
-   * Cria uma nova reserva com um status inicial, geralmente 'pendente'.
-   * Esta função é chamada antes de enviar o usuário para o gateway de pagamento.
-   * @param {object} bookingData - Contém todos os detalhes da pré-reserva.
-   * Ex: { userId, leadId, roomTypeId, checkIn, checkOut, totalPrice, paymentIntentId }
-   * @returns {Promise<object>} O registro da reserva criada.
-   */
   async createPendingBooking(bookingData) {
     const { 
       userId, 
@@ -59,14 +52,6 @@ class BookingRepository {
     console.log(`paymentid é ${paymentIntentId}`);
     return data.id;
   }
-
-  /**
-   * Confirma uma reserva que estava pendente.
-   * Chamado pelo webhook de pagamento após a confirmação.
-   * @param {number} bookingId - O ID da reserva a ser confirmada.
-   * @param {string} googleEventId - (Opcional) O ID do evento criado no Google Agenda.
-   * @returns {Promise<object>} O registro da reserva atualizada.
-   */
   async confirmBooking(bookingId, googleEventId) {
     const { data, error } = await supabase
       .from('bookings')
@@ -98,12 +83,6 @@ class BookingRepository {
     return data;
   }
 
-  /**
-   * Encontra uma reserva pendente usando um ID de intenção de pagamento.
-   * Usado pelo webhook do Stripe para saber qual reserva confirmar.
-   * @param {string} paymentIntentId - O ID da transação do gateway de pagamento.
-   * @returns {Promise<object>} O registro da reserva encontrada.
-   */
   async findByPaymentId(paymentIntentId) {
     const { data, error } = await supabase
       .from('bookings')
@@ -184,7 +163,27 @@ class BookingRepository {
     // Retorna um array simples com os IDs encontrados, ex: ['evento123', 'evento456']
     return data.map(item => item.google_calendar_event_id);
   }
+  async countAllConflictingBookings(userId, checkIn, checkOut) {
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('room_type_id')
+    .eq('user_id', userId)
+    .in('status', ['confirmada', 'confirmada_externamente', 'pendente'])
+    .lt('check_in_date', checkOut)
+    .gt('check_out_date', checkIn);
 
+  if (error) {
+    console.error("Erro ao contar todas as reservas conflitantes:", error);
+    throw error;
+  }
+
+  // Agrupa e conta os resultados
+  const counts = new Map();
+  for (const booking of data) {
+    counts.set(booking.room_type_id, (counts.get(booking.room_type_id) || 0) + 1);
+  }
+  return counts;
+}
   
   //HANDLE RESPONSE OF WEBHOOK
 

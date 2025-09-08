@@ -2,13 +2,10 @@ const BookingRepository = require('../repository/bookingRepository');
 const LeadRepository = require('../repository/leadsRepository');
 
 const GoogleCalendarService = require('../services/googleCalendarService');
+const roomRepository = require('../repository/roomRepository');
 
 class BookingController{
 
-  /**
-   * Cria uma pré-reserva e gera um link de pagamento do Stripe.
-   * Este é o endpoint principal que a IA chamará para iniciar uma reserva.
-   */
     async createBookingWithPaymentLink(req, res) {
         try {
         // O 'user' (dono do hotel) vem do seu middleware de autenticação da IA
@@ -175,10 +172,35 @@ class BookingController{
       console.error("Erro no controller ao checar disponibilidade:", err);
       res.status(500).json({ message: err.message || "Erro interno do servidor." });
     }
+    }
+
+    async  getAvailabilityReport(req, res) {
+  // 1. Busca todos os tipos de quarto do hotel
+    const { userId } = req.params; // ou req.user.id vindo do middleware
+    const { checkInDate, checkOutDate } = req.query;
+    const allRoomTypes = await roomRepository.getRoomsByUserId(userId);
+
+  // 2. Busca a contagem de reservas para todas eles de uma vez
+    const bookingCounts = await BookingRepository.countAllConflictingBookings(userId, checkInDate, checkOutDate);
+
+    // 3. Monta o relatório final
+    const report = allRoomTypes.map(roomType => {
+      const occupiedCount = bookingCounts.get(roomType.id) || 0;
+      const availableCount = roomType.total_quantity - occupiedCount;
+      
+      return {
+        id: roomType.id,
+        name: roomType.name,  
+        isAvailable: availableCount > 0,
+        availableCount: availableCount,
+        dailyRate: roomType.daily_rate,
+        description: roomType.description, // Adicionando a descrição
+      };
+    });
+
+    res.status(200).json(report);
   }
 }
-  // Futuramente, você pode adicionar outros métodos aqui, como:
-  // async cancelBooking(req, res) { ... }
-  // async getBookingDetails(req, res) { ... }
+  
 
 module.exports = BookingController;

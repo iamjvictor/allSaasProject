@@ -18,7 +18,7 @@ const leadsRoutes = require('./src/routes/leadsRoutes');
 const bookingRoutes = require('./src/routes/booksRoutes');
 const integrationRoutes = require('./src/routes/integrationRoutes');
 const cronRoutes = require('./src/routes/cronRoutes');
-
+const documentChunksRoutes = require('./src/routes/documentChunkRoutes');
 const deviceRoutes = require('./src/routes/deviceRoutes');
 
 
@@ -34,6 +34,7 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/integrations', integrationRoutes);
 app.use('/api/cron', cronRoutes);
 app.use('/api/devices', deviceRoutes);
+app.use('/api/document-chunks', documentChunksRoutes);
 
 app.get('/qrcode/:whatsappNumber', async (req, res) => {
   const { whatsappNumber } = req.params;
