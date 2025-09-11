@@ -25,6 +25,17 @@ class IntegrationRepository {
     
     return data || [];
   }
-}
 
+  async checkStripeIntegrationExists(userId) {
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('stripe_id')
+      .eq('id', userId)
+      .single();
+
+      console.log('Dados do perfil retornados do Supabase:', profile, profileError);
+
+    return profile;
+  }
+}
 module.exports = new IntegrationRepository();

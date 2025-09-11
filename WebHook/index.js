@@ -20,9 +20,10 @@ const integrationRoutes = require('./src/routes/integrationRoutes');
 const cronRoutes = require('./src/routes/cronRoutes');
 const documentChunksRoutes = require('./src/routes/documentChunkRoutes');
 const deviceRoutes = require('./src/routes/deviceRoutes');
-
+const stripeRoutes = require('./src/routes/stripeRoutes');
 
 app.use(cors());
+app.use('/api/stripe', stripeRoutes);
 app.use(express.json());
 
 app.use('/api/auth', authRoutes);
@@ -35,6 +36,7 @@ app.use('/api/integrations', integrationRoutes);
 app.use('/api/cron', cronRoutes);
 app.use('/api/devices', deviceRoutes);
 app.use('/api/document-chunks', documentChunksRoutes);
+
 
 app.get('/qrcode/:whatsappNumber', async (req, res) => {
   const { whatsappNumber } = req.params;

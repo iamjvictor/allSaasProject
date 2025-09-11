@@ -66,6 +66,16 @@ class GoogleCalendarService {
     // 3. CRIA A INSTÂNCIA DA API DO CALENDÁRIO JÁ AUTENTICADA
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     // 4. MONTA O OBJETO DO EVENTO COM OS DETALHES DA RESERVA
+    const checkOutDate = new Date(eventDetails.check_out_date);
+    checkOutDate.setDate(checkOutDate.getDate() + 2);
+
+    // Formata a data para o formato YYYY-MM-DD
+    const year = checkOutDate.getFullYear();
+    const month = String(checkOutDate.getMonth() + 1).padStart(2, '0'); // Os meses são de 0 a 11
+    const day = String(checkOutDate.getDate()).padStart(2, '0');
+    const nextDay = `${year}-${month}-${day}`;
+    console.log("DATA DE CHECK-OUT AJUSTADA PARA O GOOGLE:", nextDay);  
+
     const event = {
       summary: `Reserva: ${eventDetails.guest_name || 'Hóspede'}`,
       description: `
@@ -84,7 +94,7 @@ class GoogleCalendarService {
         date: eventDetails.check_in_date,
       },
       end: {
-        date: eventDetails.check_out_date,
+        date: nextDay,
       },
       // Adiciona o email do hóspede como um convidado no evento, se existir
       attendees: eventDetails.lead_email ? [{ email: eventDetails.lead_email }] : [],

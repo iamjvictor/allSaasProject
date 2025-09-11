@@ -25,6 +25,7 @@
     "qr-image": "^3.2.0",
     "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
+    "stripe": "^18.5.0",
     "zod": "^4.0.14"
   },
   "devDependencies": {

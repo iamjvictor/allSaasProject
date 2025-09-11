@@ -18,14 +18,14 @@ class BookingRepository {
       checkInDate, 
       checkOutDate, 
       totalPrice, 
-      paymentIntentId // O ID gerado pelo seu sistema de pagamento (ex: Stripe)
+      paymentId // O ID gerado pelo seu sistema de pagamento (ex: Stripe)
     } = bookingData;
 
 
     const availableRooms = await this.checkAvailability(roomTypeId, checkInDate, checkOutDate);
     if (availableRooms < 1) {
       //enviar resposta para a IA
-      return console.log("Não há quartos disponíveis para o período selecionado.");
+       throw new Error("INDISPONIBILIDADE: Não há quartos disponíveis para o período selecionado.");
     }
 
     const { data, error } = await supabase
@@ -38,7 +38,7 @@ class BookingRepository {
         check_out_date: checkOutDate,
         total_price: totalPrice,
         status: 'pendente', // Status inicial
-        payment_intent_id: paymentIntentId, // Ligação com o pagamento
+        payment_intent_id: paymentId, // Ligação com o pagamento
       })
       .select()
       .single();
@@ -49,9 +49,26 @@ class BookingRepository {
     }
     
     console.log(`Repository: Pré-reserva ${data.id} criada com sucesso.`);
-    console.log(`paymentid é ${paymentIntentId}`);
+    console.log(`paymentid é ${paymentId}`);
     return data.id;
   }
+  async updatePaymentInfo(bookingId, paymentId) {
+    
+    const { data, error } = await supabase
+      .from('bookings')
+      .update({
+        payment_intent_id: paymentId
+      })
+      .eq('id', bookingId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error(`Erro ao atualizar info de pagamento para reserva ${bookingId}:`, error);
+      throw new Error(`Falha ao atualizar info de pagamento: ${error.message}`);
+    }
+  }
+
   async confirmBooking(bookingId, googleEventId) {
     const { data, error } = await supabase
       .from('bookings')
@@ -80,6 +97,19 @@ class BookingRepository {
         .maybeSingle(); // Retorna o objeto ou null, sem dar erro se não encontrar
 
     if (error) throw error;
+    return data;
+  }
+  async findBookingById(bookingId) {
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('id', bookingId)
+      .single();
+
+    if (error) {
+      console.error(`Erro ao buscar reserva ${bookingId}:`, error);
+      throw new Error(`Falha ao buscar reserva: ${error.message}`);
+    }
     return data;
   }
 
