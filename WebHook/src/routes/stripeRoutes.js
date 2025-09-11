@@ -3,6 +3,7 @@
 const express = require('express');
 const router = express.Router();
 const StripeController = require('../controllers/stripeController');
+const apiAuthMiddleware = require('../middlewares/apiAuth');
 
 
 // A rota que você vai configurar no painel da Stripe.
@@ -16,11 +17,16 @@ router.post(
   StripeController.handleWebhook.bind(StripeController)
 );
 
-
-
 router.post(
   '/create-onboarding', 
   express.json(), 
-  StripeController.createOnboarding)
+  StripeController.createOnboarding);
+
+
+router.get(
+  '/balance', 
+  express.json(),
+  StripeController.getBalance
+);
 
 module.exports = router;

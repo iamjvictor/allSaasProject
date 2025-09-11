@@ -166,5 +166,56 @@ class StripeController {
       res.status(500).json({ error: 'Ocorreu um erro inesperado durante a conexão com a Stripe.' });
     }
   }
+  async getBalance(req, res) {
+    try {
+      // Passo 1: Autenticar o usuário a partir do token JWT no cabeçalho Authorization.
+    // 1. Autenticação (como você já tem)
+      const jwt = req.headers.authorization?.split(' ')[1];
+      if (!jwt) return res.status(401).json({ message: "Não autorizado." });
+      
+      const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
+      if (authError || !user) return res.status(401).json({ message: "Token inválido." });
+
+    if (!user.id) {
+      return res.status(401).json({ error: 'Não autorizado. Token de usuário inválido ou ausente.' });
+    }
+
+    // Passo 2: Buscar o 'stripe_id' do usuário no seu banco de dados (Supabase).
+    // Esta é a etapa de segurança crucial para garantir que estamos consultando a conta correta.
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('stripe_id')
+      .eq('id', user.id)
+      .single();
+    console.log('Perfil retornado do Supabase:', profile);
+
+    if (profileError || !profile || !profile.stripe_id) {
+      console.warn(`Tentativa de buscar saldo para usuário ${user.id} sem conta Stripe conectada.`);
+      return res.status(404).json({ error: 'Nenhuma conta Stripe encontrada para este usuário.' });
+    }
+    
+    const stripeAccountId = profile.stripe_id;
+
+    // Passo 3: Chamar a API da Stripe para buscar o saldo.
+    // ESTA É A CHAVE PARA O SUCESSO:
+    const balance = await stripe.balance.retrieve({
+      // O parâmetro 'stripeAccount' diz à Stripe para executar esta chamada
+      // no contexto da Conta Conectada, e não na sua conta de plataforma.
+      stripeAccount: stripeAccountId,
+    });
+
+    // Passo 4: Retornar uma resposta limpa para o frontend.
+    // O saldo vem em arrays (um por moeda), então pegamos o primeiro elemento.
+    res.status(200).json({
+      available: balance.available[0] || { amount: 0, currency: 'brl' },
+      pending: balance.pending[0] || { amount: 0, currency: 'brl' },
+    });
+
+  } catch (error) {
+    console.error(`Erro ao buscar saldo na Stripe para o usuário:`, error);
+    res.status(500).json({ error: 'Falha ao comunicar com o serviço de pagamentos.' });
+  }
+}
+   
 }
 module.exports = new StripeController();

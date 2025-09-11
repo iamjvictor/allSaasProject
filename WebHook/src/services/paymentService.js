@@ -16,7 +16,7 @@ class PaymentService {
         throw new Error("ID do usuário dono do hotel é necessário para criar o pagamento com Stripe Connect.");
       }
 
-      const PLATFORM_FEE_PERCENTAGE = 0.20; // 20%  
+      const PLATFORM_FEE_PERCENTAGE = 0; // 20%  
       // 1. Buscar o perfil do dono do hotel para obter o stripe_account_id
       const hotelOwnerProfile = await usersRepository.getProfile(booking.userId); // Assumindo método findByUserId
       
