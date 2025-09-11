@@ -4,6 +4,7 @@ const LeadRepository = require('../repository/leadsRepository');
 const GoogleCalendarService = require('../services/googleCalendarService');
 const roomRepository = require('../repository/roomRepository');
 const paymentService = require('../services/paymentService');
+const paymentRepository = require('../repository/paymentRepository');
 
 class BookingController{
 
@@ -56,7 +57,7 @@ class BookingController{
         // O webhook do Stripe nos enviará o ID da intenção de pagamento
         console.log("Corpo da requisição de confirmação de reserva:", req.body);
         const { bookingID } = req.body;
-       
+       console.log(req.body);
 
         // 1. Encontra a reserva pendente no nosso banco de dados usando o ID do pagamento
         console.log("Buscando reserva pendente com ID:", bookingID);
@@ -87,7 +88,8 @@ class BookingController{
         const confirmedBooking = await BookingRepository.confirmBooking(pendingBooking.id, googleEventId);
 
         const updateLead = await LeadRepository.updateLeadStatus(pendingBooking.user_id, lead.contact_whatsapp, 'cliente');
-      
+        const savePayment = await paymentRepository.savePayment(pendingBooking);
+        
 
       
 

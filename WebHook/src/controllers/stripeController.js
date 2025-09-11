@@ -216,6 +216,7 @@ class StripeController {
     res.status(500).json({ error: 'Falha ao comunicar com o serviço de pagamentos.' });
   }
 }
-   
+
 }
+
 module.exports = new StripeController();

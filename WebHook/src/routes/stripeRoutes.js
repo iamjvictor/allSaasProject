@@ -23,10 +23,13 @@ router.post(
   StripeController.createOnboarding);
 
 
+
+
 router.get(
   '/balance', 
   express.json(),
   StripeController.getBalance
 );
+
 
 module.exports = router;
