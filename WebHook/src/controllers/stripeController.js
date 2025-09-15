@@ -19,13 +19,14 @@ class StripeController {
     // A assinatura vem no header da requisição da Stripe
     const sig = req.headers['stripe-signature'];
     let event;
-    console.log("Recebido WEBHOOK da Stripe:", req.body);
+    
 
     try {
       // 1. VERIFICAÇÃO DE SEGURANÇA:
       // Confirma se a notificação veio mesmo da Stripe, usando o segredo.
       // É por isso que precisamos do 'req.body' bruto (raw).
       event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+      console.log('✅ Webhook da Stripe verificado com sucesso:', event);
     } catch (err) {
       console.error(`❌ Erro na verificação da assinatura do webhook: ${err.message}`);
       // Informa à Stripe que houve um problema.
@@ -71,6 +72,7 @@ class StripeController {
 
           console.log(`🚀 Chamando bookingController.confirmBooking para bookingId: ${bookingId}`);
           await bookingController.confirmBooking(mockReq, mockRes);
+         
           // FIM DA SIMULAÇÃO
 
 

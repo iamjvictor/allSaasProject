@@ -5,7 +5,7 @@ const apiAuthMiddleware = require('../middlewares/apiAuth');
 
 const bookingController = new BookingController();
 
-router.post('/create', bookingController.createBookingWithPaymentLink);
+router.post('/create',apiAuthMiddleware, bookingController.createBookingWithPaymentLink);
 router.post('/confirm', bookingController.confirmBooking);
 router.delete('/cancel/:bookingId', bookingController.cancelBooking);
 router.get('/availability', bookingController.checkAvailability);

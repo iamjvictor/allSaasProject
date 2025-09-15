@@ -10,6 +10,7 @@ const path = require('path');
 const supabase = require('../clients/supabase-client');
 
 
+
 class WhatsAppDeviceManager {
   constructor() {
     this.devices = new Map();
@@ -17,6 +18,7 @@ class WhatsAppDeviceManager {
     this.chatHistory = new Map();
     this.connectionFile = 'active_connections.json';
     this.sessionsDir = path.join(__dirname, '..', '..', '.sessions');
+    this.setupPeriodicHistoryCleanup();
     
     // Create sessions directory if it doesn't exist
     if (!fsSync.existsSync(this.sessionsDir)) {  // Use fsSync instead of fs
@@ -29,6 +31,43 @@ class WhatsAppDeviceManager {
     if (!jid) return '';
     const [number] = jid.split('@')[0].split(':');
     return number;
+  }
+  setupPeriodicHistoryCleanup() {
+    const cleanupIntervalHours = 1; // Roda a cada 1 hora. Ajuste conforme necessário.
+    const maxInactiveHours = 24;   // Limpa históricos inativos por mais de 24 horas.
+
+    console.log(`🧹 Coletor de lixo de histórico de chat configurado para rodar a cada ${cleanupIntervalHours} hora(s).`);
+
+    setInterval(() => {
+      const now = new Date();
+      let cleanedCount = 0;
+      
+      console.log(`[Limpeza de Chat] Verificando ${this.chatHistory.size} conversas...`);
+
+      // Itera sobre todas as conversas no mapa de histórico
+      for (const [whatsappNumber, history] of this.chatHistory.entries()) {
+        // Pega a última mensagem para verificar seu timestamp
+        const lastMessage = history[history.length - 1];
+        
+        // Se não houver última mensagem, pula para a próxima
+        if (!lastMessage) continue;
+
+        const lastMessageTime = new Date(lastMessage.timestamp);
+        const timeDiffHours = (now - lastMessageTime) / (1000 * 60 * 60); // Diferença em horas
+
+        // Se a última mensagem for mais antiga que o nosso limite, apaga o histórico
+        if (timeDiffHours > maxInactiveHours) {
+          this.chatHistory.delete(whatsappNumber);
+          cleanedCount++;
+          console.log(`[Limpeza de Chat] Histórico de ${whatsappNumber} removido por inatividade.`);
+        }
+      }
+
+      if (cleanedCount > 0) {
+        console.log(`[Limpeza de Chat] Concluído. ${cleanedCount} histórico(s) inativo(s) removido(s) da memória.`);
+      }
+
+    }, cleanupIntervalHours * 60 * 60 * 1000); // Converte horas para milissegundos
   }
 
   // Função para gerar user_id baseado no número do WhatsApp
@@ -61,14 +100,13 @@ class WhatsAppDeviceManager {
 
     this.chatHistory.set(whatsappNumber, history);
   }
-
   // Função para formatar histórico para a API
   formatChatHistory(whatsappNumber) {
     const history = this.getChatHistory(whatsappNumber);
     if (history.length === 0) return "";
 
     return history.map(entry => {
-      const role = entry.sender === 'user' ? 'Usuário' : 'Victor';
+      const role = entry.sender === 'user' ? 'Usuário' : 'Alfred';
       return `${role}: ${entry.message}`;
     }).join('\n');
   }
@@ -81,7 +119,9 @@ class WhatsAppDeviceManager {
 
   // Função para obter histórico de um usuário específico
   getChatHistoryForUser(whatsappNumber) {
-    return this.getChatHistory(whatsappNumber);
+
+    const chatHistoryFormatted = this.formatChatHistory(whatsappNumber);
+    return chatHistoryFormatted;
   }
 
   // Função para obter estatísticas do histórico
@@ -186,46 +226,7 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
 }
 
 
-setupMessageHandler(sock, deviceConfig) {
-  sock.ev.on('messages.upsert', async (m) => {
-    const msg = m.messages[0];
-    if (msg.key.fromMe) {
-        console.log(`📤 Eu enviei: ${msg.message?.conversation || JSON.stringify(msg.message)}`);
-    } else {
-        console.log(`📥 Recebi: ${msg.message?.conversation || JSON.stringify(msg.message)}`);
-    }
 
-    const userQuestion = msg.message?.conversation || 
-                         msg.message?.extendedTextMessage?.text;
-
-    if (!userQuestion || msg.key.fromMe) return;
-
-    const from = msg.key.remoteJid;
-    const whatsappNumber = this.extractWhatsAppNumber(from);
-
-    try {
-      this.addToChatHistory(whatsappNumber, 'user', userQuestion);
-      const chatHistory = this.formatChatHistory(whatsappNumber);
-
-      const pythonResponse = await axios.post(config.pythonApiUrl, {
-        user_id: deviceConfig.user_id,
-        message: userQuestion,
-        chat_history: chatHistory
-      });
-
-      const aiResponse = pythonResponse.data.response_gemini;
-      this.addToChatHistory(whatsappNumber, 'assistant', aiResponse);
-
-      await sock.sendMessage(from, { text: aiResponse });
-
-    } catch (error) {
-      console.error(`❌ ${deviceConfig.name} - Erro:`, error.message);
-      await sock.sendMessage(from, { 
-        text: 'Opa, deu um probleminha aqui pra conectar com a IA. Tenta de novo daqui a pouco!' 
-      });
-    }
-  });
-}
 
 async connectDevice(deviceConfig, forceNew = false) {
   
@@ -250,8 +251,7 @@ async connectDevice(deviceConfig, forceNew = false) {
 
       // Setup eventos principais
       this.setupConnectionEvents(sock, deviceConfig,saveCreds, resolve, reject, connectionTimeout);
-      this.setupMessageHandler(sock, deviceConfig);
-
+      
       // Armazena instância
       this.devices.set(deviceConfig.id, {
         sock,
@@ -430,25 +430,75 @@ async connectDevice(deviceConfig, forceNew = false) {
   }
 
   async _handleIncomingMessage(sock, deviceConfig, msg) {
+    // Extrair texto da mensagem de forma mais robusta
+    let userQuestion = '';
+    if (msg.message) {
+      userQuestion = msg.message.conversation || 
+                   msg.message.extendedTextMessage?.text || 
+                   msg.message.imageMessage?.caption ||
+                   msg.message.videoMessage?.caption ||
+                   msg.message.documentMessage?.caption ||
+                   '';
+    }
     const from = msg.key.remoteJid;
-    const userQuestion = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
+
+    // Determinar o JID correto para identificar o remetente
+    // senderPn = número do remetente real (preferido)
+    // remoteJid = ID do chat (fallback, mas pode ser o mesmo número em chats individuais)
+    const senderJid = msg.key.senderPn || msg.key.remoteJid;
+    let senderNumber = senderJid ? senderJid.split('@')[0] : '';
+    
+    // Normalizar o número para garantir consistência
+    if (senderNumber) {
+      // Limpar caracteres não numéricos
+      senderNumber = senderNumber.replace(/\D/g, '');
+      
+      // Adicionar código do país se necessário (assumindo Brasil)
+      if (senderNumber.length === 11 && !senderNumber.startsWith('55')) {
+        senderNumber = '55' + senderNumber;
+      } else if (senderNumber.length === 10) {
+        senderNumber = '55' + senderNumber;
+      }
+    }
+
+    // Debug: verificar estrutura da mensagem
+    console.log(`[DEBUG] Estrutura da mensagem:`, {
+      remoteJid: msg.key.remoteJid,
+      senderPn: msg.key.senderPn,
+      senderJid: senderJid,
+      senderNumber: senderNumber,
+      userQuestion: userQuestion,
+      messageType: typeof userQuestion
+    });
 
     
-
-    // Se quiser processar também as mensagens enviadas por você, remova o filtro abaixo:
-    // if (msg.key.fromMe || !userQuestion) return;
-    if (!userQuestion) return;
-
-    console.log(`[INFO] [${deviceConfig.id}] 📥 Mensagem de ${from}: "${userQuestion}"`);
+    // Verificar se temos uma mensagem válida
+    if (!userQuestion || userQuestion.trim() === '') {
+      console.log(`[DEBUG] Mensagem vazia ou inválida:`, userQuestion);
+      return;
+    }
+    
+    // Verificar se temos um número válido
+    if (!senderNumber || senderNumber.length < 10) {
+      console.log(`[ERROR] Número do remetente inválido:`, senderNumber);
+      return;
+    }
+    
+    console.log(`[INFO] [${deviceConfig.id}] 📥 Mensagem de ${senderNumber}: "${userQuestion}"`);   
+    
    
+    this.addToChatHistory(deviceConfig.whatsappNumber, 'user', userQuestion);
 
+    console.log(this.getChatHistoryForUser(deviceConfig.whatsappNumber))
     try {
       // Chamada protegida à API de IA, enviando x-api-key no header
       const pythonResponse = await axios.post(
-        `${process.env.IA_API_URL}/process_whatsapp_message`,
+        `${process.env.IA_BASE_URL}/process_whatsapp_message`,
         {
           user_id: deviceConfig.user_id,
           message: userQuestion,
+          chat_history: this.getChatHistoryForUser(deviceConfig.whatsappNumber),
+          lead_whatsapp_number: senderNumber
         },
         {
           headers: {
@@ -464,7 +514,7 @@ async connectDevice(deviceConfig, forceNew = false) {
 
     } catch (error) {
       console.error(`[ERROR] [${deviceConfig.id}] ❌ Erro ao processar mensagem com IA: ${error.message}`);
-      await sock.sendMessage(from, { text: 'Opa, tivemos um problema com a IA. Tente novamente.' });
+      await sock.sendMessage(senderNumber, { text: 'Opa, tivemos um problema com a IA. Tente novamente.' });
     }
   }
 

@@ -83,6 +83,19 @@ class UserRepository {
     }
     return data;
   }
+  async addDDeviceIdToUser(userId, deviceId) {
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ device_id: deviceId, updated_at: new Date() })
+      .eq('id', userId)
+      .select('device_id') // Retorna apenas o novo device_id para confirmação
+      .single();
+    
+    if (error) {
+      throw error;
+    }
+    return data;
+  }
 
   async updateProfile(userId, profileData) {
     const { data, error } = await supabase

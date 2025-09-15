@@ -14,7 +14,7 @@ class LeadsRepository {
     if (!userId || !whatsappNumber) {
       throw new Error("UserID e WhatsApp Number são obrigatórios.");
     }
-
+    console.log(`Buscando lead para o número: ${whatsappNumber}`);
     // 1. Primeiro, tentamos encontrar um lead que já exista
     const { data: existingLead, error: findError } = await supabase
       .from('leads')

@@ -5,6 +5,7 @@ const GoogleCalendarService = require('../services/googleCalendarService');
 const roomRepository = require('../repository/roomRepository');
 const paymentService = require('../services/paymentService');
 const paymentRepository = require('../repository/paymentRepository');
+const usersRepository = require('../repository/usersRepository');
 
 class BookingController{
 
@@ -89,6 +90,16 @@ class BookingController{
 
         const updateLead = await LeadRepository.updateLeadStatus(pendingBooking.user_id, lead.contact_whatsapp, 'cliente');
         const savePayment = await paymentRepository.savePayment(pendingBooking);
+
+         const message = `Uhuul, ${eventDetails.guest_name}! 🎉 Sua reserva está confirmada.\n\n` +
+                    `*Check-in:* ${eventDetails.check_in_date}\n` +
+                    `*Check-out:* ${eventDetails.check_out_date}\n\n` +
+                    `Preparamos tudo para a sua chegada. Mal podemos esperar para te receber!`;
+
+    // 5. Chame a função do seu deviceController
+        console.log(`Enviando mensagem do device [${deviceId}] para [${eventDetails.lead_whatsapp}] com o texto: ${message}`);
+        const profile = await usersRepository.getProfile(pendingBooking.user_id);
+        await deviceController.sendMessage(profile.deviceId, eventDetails.lead_whatsapp, message);
         
 
       
@@ -154,12 +165,15 @@ class BookingController{
     async  getAvailabilityReport(req, res) {
   // 1. Busca todos os tipos de quarto do hotel
     const { userId } = req.params; // ou req.user.id vindo do middleware
-    const { checkInDate, checkOutDate } = req.query;
+    const { checkIn: checkInDate, checkOut: checkOutDate } = req.body;
     const allRoomTypes = await roomRepository.getRoomsByUserId(userId);
+
+    console.log("testeando disponibilidade para os dias ",userId, checkInDate, checkOutDate)
+    
 
   // 2. Busca a contagem de reservas para todas eles de uma vez
     const bookingCounts = await BookingRepository.countAllConflictingBookings(userId, checkInDate, checkOutDate);
-
+    console.log(bookingCounts)
     // 3. Monta o relatório final
     const report = allRoomTypes.map(roomType => {
       const occupiedCount = bookingCounts.get(roomType.id) || 0;
@@ -174,7 +188,7 @@ class BookingController{
         description: roomType.description, // Adicionando a descrição
       };
     });
-
+    console.log(report)
     res.status(200).json(report);
   }
 }

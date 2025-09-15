@@ -74,7 +74,7 @@ class GoogleCalendarService {
     const month = String(checkOutDate.getMonth() + 1).padStart(2, '0'); // Os meses são de 0 a 11
     const day = String(checkOutDate.getDate()).padStart(2, '0');
     const nextDay = `${year}-${month}-${day}`;
-    console.log("DATA DE CHECK-OUT AJUSTADA PARA O GOOGLE:", nextDay);  
+    
 
     const event = {
       summary: `Reserva: ${eventDetails.guest_name || 'Hóspede'}`,
@@ -109,7 +109,7 @@ class GoogleCalendarService {
       });
 
       const eventId = createdEvent.data.id;
-      console.log(`SERVICE: Evento criado com sucesso no Google Agenda. ID: ${eventId}`);
+      
       
       // Retorna o ID do evento para ser salvo na sua tabela 'bookings'
       return eventId;

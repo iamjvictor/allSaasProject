@@ -1,5 +1,6 @@
 const WhatsAppDeviceManager = require('../services/multi-device-manager');
 const config = require('../config');
+const usersRepository = require('../repository/usersRepository');
 
 class DeviceController {
   constructor() {
@@ -80,6 +81,7 @@ class DeviceController {
       }
       // Chama o manager e retorna a promise (QR code ou 'CONNECTED')
       const result = await this.deviceManager.connectDevice(deviceConfig, true);
+      await usersRepository.addDDeviceIdToUser(deviceConfig.user_id, deviceConfig.id);
       res.json({ result });
     } catch (err) {
       res.status(500).json({ error: err.message });
