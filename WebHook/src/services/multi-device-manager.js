@@ -8,6 +8,7 @@ const fs = require('fs/promises');
 const fsSync = require('fs');  // Add this line for sync operations
 const path = require('path');
 const supabase = require('../clients/supabase-client');
+const LeadRepository = require('../repository/leadsRepository');
 
 
 
@@ -423,6 +424,7 @@ async connectDevice(deviceConfig, forceNew = false) {
     sock.ev.on('messages.upsert', ({ messages }) => {
       
       const msg = messages[0];
+     
       console.log(`[INFO] [${deviceId}] 📩 ${msg.message?.conversation }`);
       if (msg.key.fromMe || !msg.message) return;
       this._handleIncomingMessage(sock, deviceConfig, msg);
@@ -486,6 +488,15 @@ async connectDevice(deviceConfig, forceNew = false) {
     
     console.log(`[INFO] [${deviceConfig.id}] 📥 Mensagem de ${senderNumber}: "${userQuestion}"`);   
     
+    // Criar/encontrar lead para o número do remetente
+    try {
+     
+      const lead = await LeadRepository.findOrCreateByWhatsappNumber(deviceConfig.user_id, senderNumber);
+      console.log(`[INFO] [${deviceConfig.id}] 👤 Lead encontrado/criado:`, lead.id);
+    } catch (error) {
+      console.error(`[ERROR] [${deviceConfig.id}] ❌ Erro ao criar/encontrar lead:`, error.message);
+      // Continuar mesmo com erro no lead, pois a mensagem ainda pode ser processada
+    }
    
     this.addToChatHistory(deviceConfig.whatsappNumber, 'user', userQuestion);
 

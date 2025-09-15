@@ -45,6 +45,7 @@ class BookingController{
           const paymentUrl = checkoutResult.paymentUrl;
 
         await BookingRepository.updatePaymentInfo(pendingBooking, paymentId);
+        await LeadRepository.updateLeadStatus(user_id, lead_whatsapp_number, 'quente');
         res.status(201).json({ message: "Pré-reserva criada com sucesso!", bookingId: pendingBooking, paymentUrl: paymentUrl });
           
         }catch (err) {
@@ -165,11 +166,12 @@ class BookingController{
     async  getAvailabilityReport(req, res) {
   // 1. Busca todos os tipos de quarto do hotel
     const { userId } = req.params; // ou req.user.id vindo do middleware
-    const { checkIn: checkInDate, checkOut: checkOutDate } = req.body;
+    const { checkIn: checkInDate, checkOut: checkOutDate,leadWhatsappNumber: lead_whatsapp_number } = req.body;
     const allRoomTypes = await roomRepository.getRoomsByUserId(userId);
 
-    console.log("testeando disponibilidade para os dias ",userId, checkInDate, checkOutDate)
-    
+    console.log("testeando disponibilidade para os dias ",userId, checkInDate, checkOutDate, lead_whatsapp_number)
+    await LeadRepository.updateLeadStatus(userId, lead_whatsapp_number, 'morno');
+    console.log("Lead atualizado para Morno")
 
   // 2. Busca a contagem de reservas para todas eles de uma vez
     const bookingCounts = await BookingRepository.countAllConflictingBookings(userId, checkInDate, checkOutDate);
