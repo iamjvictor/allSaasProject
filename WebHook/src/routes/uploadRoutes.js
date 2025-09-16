@@ -15,6 +15,9 @@ router.post('/room_photos', upload.array('roomPhotos'), uploadController.uploadR
 router.post('/get-content', apiAuthMiddleware, uploadController.getDocumentsForAI);
 
 router.get('/getdocuments', uploadController.getUploadedFiles);
+router.get('/getfiles', uploadController.getFilesFromBucket);
+router.delete('/document/:id', uploadController.deleteDocument);
+
 
 
 module.exports = router;

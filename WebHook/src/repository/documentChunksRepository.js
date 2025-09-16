@@ -48,6 +48,17 @@ class DocumentChunksRepository {
     // Mapeia para retornar apenas o conteúdo dos chunks
     return data.map(chunk => chunk.content);
   }
+
+  async deleteChunksByDocumentId(documentId) {
+    const { error } = await supabase
+      .from('document_chunks')
+      .delete()
+      .eq('document_id', documentId);
+
+    if (error) {
+      throw new Error(`Falha ao deletar chunks do documento: ${error.message}`);
+    }
+  }
  
 }
 

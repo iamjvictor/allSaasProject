@@ -191,6 +191,63 @@ class UploadController {
     }
   }
 
-}
+  async getFilesFromBucket(req, res) {
+    const jwt = req.headers.authorization?.split(' ')[1];
+    if (!jwt) {
+      return res.status(401).json({ message: "Acesso negado. Token não fornecido." });
+    }
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
+    if (authError) {
+      return res.status(401).json({ message: "Token inválido." });
+    }
+
+    try {
+      const files = await pdfRepository.getFilesFromBucket(user.id);
+      res.status(200).json({ data: files });
+    } catch (error) {
+      console.error("Erro ao buscar arquivos do bucket:", error);
+      res.status(500).json({ message: "Erro interno do servidor." });
+    }
+  }
+
+  async deleteDocument(req, res) {
+    const jwt = req.headers.authorization?.split(' ')[1];
+    if (!jwt) {
+      return res.status(401).json({ message: "Acesso negado. Token não fornecido." });
+    }
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
+    if (authError) {
+      return res.status(401).json({ message: "Token inválido." });
+    }
+
+    const { id } = req.params;
+    
+    console.log(id)
+
+    try {
+      const document = await pdfRepository.getById(id);
+      console.log("DOCUMENTO:" ,document)
+      if (!document) {
+        return res.status(404).json({ message: "Documento não encontrado." });
+      }
+
+      if (document.user_id !== user.id) {
+        return res.status(403).json({ message: "Você não tem permissão para deletar este arquivo." });
+      }
+
+      await documentChunksRepository.deleteChunksByDocumentId(id);
+      console.log("CHUNK DELETADO")
+      await pdfRepository.deleteFileFromBucket(document.storage_path);
+      await pdfRepository.deleteDocumentById(id);
+
+      res.status(200).json({ message: "Arquivo deletado com sucesso." });
+    } catch (error) {
+      console.error("Erro ao deletar documento:", error);
+      res.status(500).json({ message: "Erro interno do servidor." });
+    }
+  }
+}  
 
 module.exports =  UploadController;
