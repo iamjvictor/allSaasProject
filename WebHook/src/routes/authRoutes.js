@@ -13,6 +13,9 @@ router.get('/google/callback', authController.googleAuthCallback);
 
 router.get('/google/check', authController.checkGoogleIntegration);
 
+router.post('/google/disconnect', authController.disconnectGoogle);
+
+
 // ...
 //router.get('/google/auth', authController.redirectToGoogleAuth);
 // ...

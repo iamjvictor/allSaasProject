@@ -73,6 +73,18 @@ async deleteGoogleTokens(userId) {
     
     if (error) throw error;
   }
+
+  // Função para buscar integração pelo watch_resource_id
+  async getIntegrationByWatchId(watchResourceId) {
+    const { data, error } = await supabase
+      .from('google_integrations')
+      .select('*')
+      .eq('google_watch_resource_id', watchResourceId)
+      .single();
+    
+    if (error && error.code !== 'PGRST116') throw error;
+    return { data, error };
+  }
 }
 
  

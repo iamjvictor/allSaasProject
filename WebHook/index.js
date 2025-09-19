@@ -6,7 +6,11 @@ const bcrypt = require('bcryptjs'); // Importe a biblioteca de hash
 const qrcodeTerminal = require('qrcode-terminal');
 const qr = require('qr-image'); // Add this at the top of your file with other requires
 const fs = require('fs');
+const DeviceController = require('./src/controllers/deviceController');
+
+// Criar uma instância única do deviceManager e do controller
 const deviceManager = new WhatsAppDeviceManager();
+const deviceController = new DeviceController(deviceManager);
 const app = express();
 const userRepository = require('./src/repository/usersRepository'); // Corrigido para usar o repositório exportado
 const cors = require('cors');
@@ -19,7 +23,7 @@ const bookingRoutes = require('./src/routes/booksRoutes');
 const integrationRoutes = require('./src/routes/integrationRoutes');
 const cronRoutes = require('./src/routes/cronRoutes');
 const documentChunksRoutes = require('./src/routes/documentChunkRoutes');
-const deviceRoutes = require('./src/routes/deviceRoutes');
+const { createDeviceRoutes } = require('./src/routes/deviceRoutes');
 const stripeRoutes = require('./src/routes/stripeRoutes');
 
 app.use(cors());
@@ -34,6 +38,8 @@ app.use('/api/leads', leadsRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/integrations', integrationRoutes);
 app.use('/api/cron', cronRoutes);
+// Usar a mesma instância do deviceManager para as rotas
+const deviceRoutes = createDeviceRoutes(deviceController);
 app.use('/api/devices', deviceRoutes);
 app.use('/api/document-chunks', documentChunksRoutes);
 
@@ -150,7 +156,15 @@ app.delete('/chat-history', async (req, res) => {
 
 app.listen(4000, async () => {
   console.log('🚀 API de cadastro rodando na porta 4000');
-  await deviceManager.reconnectAllDevices();
+  
+  // Reconectar todos os dispositivos automaticamente ao iniciar o servidor
+  try {
+    console.log('🔄 Iniciando reconexão automática de dispositivos...');
+    await deviceManager.reconnectAllDevices();
+    console.log('✅ Reconexão automática concluída');
+  } catch (error) {
+    console.error('❌ Erro na reconexão automática:', error.message);
+  }
 });
 
 // Função para reconectar todos os dispositivos automaticamente

@@ -241,6 +241,41 @@ class GoogleCalendarService {
     return this.watchCalendar(userId);
   }
 
+  async stopWatch(watchResourceId) {
+    try {
+      console.log(`SERVICE: Parando watch do calendário: ${watchResourceId}`);
+      
+      // Buscar o userId pelo watch_resource_id
+      const { data: integration, error } = await googleRepository.getIntegrationByWatchId(watchResourceId);
+      if (error || !integration) {
+        console.log(`⚠️ Integração não encontrada para watch_resource_id: ${watchResourceId}`);
+        return;
+      }
+
+      const oauth2Client = await this.getAuthenticatedClient(integration.user_id);
+      if (!oauth2Client) {
+        console.log(`⚠️ Não foi possível autenticar para parar o watch`);
+        return;
+      }
+
+      const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
+      
+      await calendar.channels.stop({
+        requestBody: {
+          id: integration.user_id, // O 'channelId' que usamos
+          resourceId: watchResourceId, // O 'resourceId' que salvamos
+        }
+      });
+      
+      console.log(`✅ Watch parado com sucesso: ${watchResourceId}`);
+      return true;
+    } catch (error) {
+      console.error(`❌ Erro ao parar watch:`, error);
+      // Continua mesmo se der erro, pois o watch pode já ter expirado
+      return false;
+    }
+  }
+
   async createOrUpdateFromGoogleEvent(userId, event) {
    console.log(`SINCRONIZAÇÃO: Processando evento do Google Calendar ID: ${event.id}`);
 

@@ -206,7 +206,6 @@ class BookingRepository {
     console.error("Erro ao contar todas as reservas conflitantes:", error);
     throw error;
   }
-
   // Agrupa e conta os resultados
   const counts = new Map();
   for (const booking of data) {
@@ -301,5 +300,25 @@ class BookingRepository {
       throw new Error("Falha ao deletar a reserva correspondente ao evento do calendário.");
     }
   }
+
+  // === MÉTODOS PARA LIMPEZA DE RESERVAS ANTIGAS ===
+
+  // Deleta uma reserva específica
+  async deleteBooking(bookingId) {
+    const { error } = await supabase
+      .from('bookings')
+      .delete()
+      .eq('id', bookingId);
+
+    if (error) {
+      console.error(`Erro ao deletar reserva ${bookingId}:`, error);
+      throw new Error(`Falha ao deletar reserva: ${error.message}`);
+    }
+
+    console.log(`Reserva ${bookingId} deletada com sucesso`);
+  }
+
+
+  
 }
 module.exports = new BookingRepository();

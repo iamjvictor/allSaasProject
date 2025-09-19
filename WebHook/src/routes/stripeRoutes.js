@@ -18,11 +18,22 @@ router.post(
 );
 
 router.post(
+  '/create-subscription', 
+  express.json(), 
+  StripeController.createSubscription
+);
+
+router.post(
   '/create-onboarding', 
   express.json(), 
-  StripeController.createOnboarding);
+  StripeController.createOnboarding
+);
 
-
+router.post(
+  '/cancel-subscription', 
+  express.json(), 
+  StripeController.cancelSubscription
+);
 
 
 router.get(

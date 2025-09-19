@@ -1,6 +1,6 @@
 // src/services/payment.service.js
 // This is your test secret API key.
-const stripe = require('stripe')('sk_test_51S0R3DAzh8iKKBsjFPTOQoOx7BM6pGJkrsJ3QNHkxWxokHxDWdMbHztCPrNth4dICnGIuFQP6Tg6H06wN7Slh7fU00qidxNGtV');
+const stripe = require('stripe')(`${process.env.STRIPE_SECRET_KEY}`);
 
 const usersRepository = require('../repository/usersRepository');
 
@@ -39,10 +39,12 @@ class PaymentService {
       const applicationFeeAmount = Math.round(calculatedTotalPriceCents * PLATFORM_FEE_PERCENTAGE);
 
       // As URLs de sucesso e cancelamento
-      const successUrl = `${process.env.FRONTEND_URL}/payment-status?status=success&booking_id=${booking.id}`;
-      const cancelUrl = `${process.env.FRONTEND_URL}/payment-status?status=cancelled&booking_id=${booking.id}`;
+      const successUrl = `${process.env.FRONTEND_URL}/payment-status?status=success&booking_id=${pendingID}`;
+      const cancelUrl = `${process.env.FRONTEND_URL}/payment-status?status=cancelled&booking_id=${pendingID}`;
        
-      // 4. Cria a Sessão de Checkout com Stripe Connect
+      // 4. Cria a Sessão de Checkout com Stripe Connect (expira em 15 minutos)
+      const expiresAt = Math.floor(Date.now() / 1000) + (30 * 60); // 15 minutos em segundos
+      
       const session = await stripe.checkout.sessions.create({
         payment_method_types: ['card'],
         line_items: [
@@ -61,6 +63,7 @@ class PaymentService {
         mode: 'payment',
         success_url: successUrl,
         cancel_url: cancelUrl,
+        expires_at: expiresAt, // Sessão expira em 15 minutos
         metadata: {
           booking_id: pendingID,
           hotel_owner_user_id: booking.user_id, // ID do dono do hotel na sua plataforma
@@ -88,6 +91,9 @@ class PaymentService {
       throw new Error(`Falha ao gerar o link de pagamento. ${error.message}`);
     }
   }
+
+ 
+ 
 }
 
 module.exports = new PaymentService();

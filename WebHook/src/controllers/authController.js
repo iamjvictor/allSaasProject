@@ -177,7 +177,7 @@ class AuthController {
     }
   }
 
-  /*async redirectToGoogleAuth(req, res) {
+  async redirectToGoogleAuth(req, res) {
     // O 'req.token' vem do seu authMiddleware
      const jwt = req.headers.authorization?.split(' ')[1];
 
@@ -203,7 +203,103 @@ class AuthController {
 
     // Redireciona o navegador do usuário para a página de permissão do Google
     res.redirect(url);
-  }*/
+  }
+
+  async disconnectGoogle(req, res) {
+    try {
+      const jwt = req.headers.authorization?.split(' ')[1];
+      if (!jwt) return res.status(401).json({ message: "Não autorizado." });
+
+      const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
+      if (authError || !user) return res.status(401).json({ message: "Token inválido." });
+
+      const userId = user.id;
+      console.log(`🔌 Iniciando desconexão do Google para usuário ${userId}`);
+
+      // 1. Buscar dados da integração do Google
+      const { data: googleIntegration, error: integrationError } = await supabase
+        .from('google_integrations')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
+
+      if (integrationError || !googleIntegration) {
+        console.log(`⚠️ Nenhuma integração Google encontrada para usuário ${userId}`);
+        return res.status(404).json({ message: "Integração Google não encontrada." });
+      }
+
+      // 2. Parar o watch do calendário (se existir)
+      if (googleIntegration.watch_resource_id) {
+        try {
+          console.log(`🛑 Parando watch do calendário: ${googleIntegration.watch_resource_id}`);
+          await GoogleCalendarService.stopWatch(googleIntegration.watch_resource_id);
+          console.log(`✅ Watch parado com sucesso`);
+        } catch (watchError) {
+          console.error(`❌ Erro ao parar watch:`, watchError);
+          // Continua mesmo se der erro no watch
+        }
+      }
+      const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+      if (profileError || !profile) {
+        console.log(`⚠️ Nenhum perfil encontrado para usuário ${userId}`);
+        return res.status(404).json({ message: "Perfil não encontrado." });
+      }
+
+      // 3. Desconectar dispositivo WhatsApp (se conectado)
+      try {
+        console.log(`📱 Desconectando dispositivo WhatsApp...`);
+        const deviceId = `device-${profile.whatsapp_number?.replace(/\D/g, '')}`;
+        
+        // Importar o multi-device-manager dinamicamente
+        const WhatsAppDeviceManager = require('../services/multi-device-manager');
+        const multiDeviceManager = new WhatsAppDeviceManager();
+        await multiDeviceManager.disconnectDevice(deviceId);
+        console.log(`✅ Dispositivo WhatsApp desconectado`);
+      } catch (deviceError) {
+        console.error(`❌ Erro ao desconectar dispositivo WhatsApp:`, deviceError);
+        // Continua mesmo se der erro no dispositivo
+      }
+
+      // 4. Deletar integração do banco de dados
+      const { error: deleteError } = await supabase
+        .from('google_integrations')
+        .delete()
+        .eq('user_id', userId);
+
+      if (deleteError) {
+        console.error(`❌ Erro ao deletar integração:`, deleteError);
+        return res.status(500).json({ message: "Erro ao remover integração do banco de dados." });
+      }
+
+      // 5. Deletar pasta de sessões do WhatsApp
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        const sessionsPath = path.join(__dirname, '../../.sessions/${profile.whatsapp_number}');
+        
+        if (fs.existsSync(sessionsPath)) {
+          console.log(`🗑️ Removendo pasta de sessões: ${sessionsPath}`);
+          fs.rmSync(sessionsPath, { recursive: true, force: true });
+          console.log(`✅ Pasta de sessões removida`);
+        }
+      } catch (fsError) {
+        console.error(`❌ Erro ao remover pasta de sessões:`, fsError);
+        // Continua mesmo se der erro na remoção da pasta
+      }
+
+      console.log(`✅ Desconexão do Google concluída para usuário ${userId}`);
+      res.status(200).json({ message: "Google Agenda desconectado com sucesso." });
+
+    } catch (error) {
+      console.error('Erro ao desconectar Google:', error);
+      res.status(500).json({ message: "Erro interno do servidor." });
+    }
+  }
 }
 
 module.exports =  AuthController;

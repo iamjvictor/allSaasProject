@@ -3,8 +3,9 @@ const config = require('../config');
 const usersRepository = require('../repository/usersRepository');
 
 class DeviceController {
-  constructor() {
-    this.deviceManager = new WhatsAppDeviceManager();
+  constructor(deviceManager = null) {
+    // Se uma instância for passada, usa ela; senão cria uma nova
+    this.deviceManager = deviceManager || new WhatsAppDeviceManager();
   }
 
   async startSingleDevice(deviceId) {
@@ -32,7 +33,6 @@ class DeviceController {
   async sendMessage(deviceId, to, message) {
     return await this.deviceManager.sendMessageToDevice(deviceId, to, message);
   }
-
   listDevices() {
     console.log('📱 Dispositivos disponíveis:');
     this.deviceManager.deviceConfigs.forEach(device => {
@@ -85,6 +85,88 @@ class DeviceController {
       res.json({ result });
     } catch (err) {
       res.status(500).json({ error: err.message });
+    }
+  }
+
+  async disconnectDevice(req, res) {
+    try {
+      const { deviceId } = req.body;
+      
+      if (!deviceId) {
+        return res.status(400).json({ error: 'deviceId é obrigatório' });
+      }
+
+      console.log(`🔌 Desconectando dispositivo: ${deviceId}`);
+      
+      // Desconectar o dispositivo
+      await this.deviceManager.disconnectDevice(deviceId);
+      
+      // Apagar a pasta de sessão específica do dispositivo Baileys para evitar religação após reinício do servidor
+      const fs = require('fs');
+      const path = require('path');
+      
+      // Extrair apenas o número do WhatsApp do deviceId (remover 'device-' prefix)
+      const whatsappNumber = deviceId.replace('device-', '');
+      const deviceSessionsPath = path.join(__dirname, '../../.sessions', whatsappNumber);
+      
+      if (fs.existsSync(deviceSessionsPath)) {
+        console.log(`🗑️ Removendo pasta de sessões do dispositivo: ${deviceSessionsPath}`);
+        fs.rmSync(deviceSessionsPath, { recursive: true, force: true });
+        console.log(`✅ Pasta de sessões do dispositivo removida`);
+      } else {
+        console.log(`ℹ️ Pasta de sessões do dispositivo não encontrada: ${deviceSessionsPath}`);
+      }
+
+      res.json({ message: 'Dispositivo desconectado com sucesso' });
+    } catch (err) {
+      console.error('Erro ao desconectar dispositivo:', err);
+      res.status(500).json({ error: err.message });
+    }
+  }
+
+  async getDeviceStatus(req, res) {
+    const { deviceId } = req.params;
+   
+    
+    try {
+      if (deviceId) {
+        const deviceInfo = this.deviceManager.getDeviceInfo(deviceId);
+        const connected = deviceInfo ? deviceInfo.connected : false;
+        if (deviceInfo ==null ) {
+          return res.status(404).json({ error: 'Dispositivo não encontrado' }); }
+        res.json({ 
+          status: deviceInfo ? [deviceInfo] : [],
+          connected,
+          deviceId
+        });
+      } else {
+        // Retornar status de todos os dispositivos
+        const statusData = this.deviceManager.getDeviceStatus();
+        const devices = statusData.devices || [];
+        const connected = devices.some(device => device.connected);
+        
+        
+        res.json({ 
+          status: devices, 
+          connected,
+          chatHistory: statusData.chatHistory 
+        });
+      }
+    } catch (err) {
+      console.error('Erro ao obter status dos dispositivos:', err);
+      res.status(500).json({ error: err.message });
+    }
+  }
+
+  // Nova função para reconectar todos os dispositivos usando a mesma instância do controller
+  async reconnectAllDevices(req, res) {
+    try {
+      console.log('🔄 Iniciando reconexão de todos os dispositivos via controller...');
+      await this.deviceManager.reconnectAllDevices();
+      
+    } catch (err) {
+      console.error('Erro ao reconectar dispositivos:', err);
+      
     }
   }
 }

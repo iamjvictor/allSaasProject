@@ -1,14 +1,16 @@
 // src/api/controllers/stripe.controller.js
 
-//const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 // This is your test secret API key.
-const stripe = require('stripe')('sk_test_51S0R3DAzh8iKKBsjFPTOQoOx7BM6pGJkrsJ3QNHkxWxokHxDWdMbHztCPrNth4dICnGIuFQP6Tg6H06wN7Slh7fU00qidxNGtV');
+
 // Importe os repositórios/serviços que você precisará para finalizar a reserva
 const bookingRepository = require('../repository/bookingRepository');
 const integrationRepository = require('../repository/integrationRepository');
 const BookingController = require('./bookingController');
 const bookingController = new BookingController();
 const supabase = require('../clients/supabase-client');
+const WhatsAppDeviceManager = require('../services/multi-device-manager');
+const deviceManager = new WhatsAppDeviceManager();
 
 
 // Pegue o "Segredo do endpoint" que a Stripe te deu e coloque no seu .env
@@ -26,7 +28,8 @@ class StripeController {
       // Confirma se a notificação veio mesmo da Stripe, usando o segredo.
       // É por isso que precisamos do 'req.body' bruto (raw).
       event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
-      console.log('✅ Webhook da Stripe verificado com sucesso:', event);
+      
+
     } catch (err) {
       console.error(`❌ Erro na verificação da assinatura do webhook: ${err.message}`);
       // Informa à Stripe que houve um problema.
@@ -81,13 +84,392 @@ class StripeController {
           // Retornar 200 OK para a Stripe, mesmo com erro interno.
           return res.status(200).send('OK (Erro interno ao confirmar)');
         }
+    }else if (event.type === 'customer.subscription.created') {
+      const subscription = event.data.object;
+      const customerId = subscription.customer;
+      
+      console.log(`🆕 Nova subscription criada para customer: ${customerId}`);
+
+      try {
+        // Buscar o usuário pelo customer_id do Stripe
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, stripe_customer_id')
+          .eq('stripe_customer_id', customerId)
+          .single();
+
+        if (profileError || !profile) {
+          console.error(`❌ Perfil não encontrado para customer ${customerId}:`, profileError);
+          return res.status(200).send('OK (Perfil não encontrado)');
+        }
+
+        const priceId = subscription.items.data[0].price.id;
+
+        // Validar e converter current_period_end
+        let currentPeriodEndsAt = null;
+        if (subscription.current_period_end && typeof subscription.current_period_end === 'number') {
+          const date = new Date(subscription.current_period_end * 1000);
+          if (!isNaN(date.getTime())) {
+            currentPeriodEndsAt = date.toISOString();
+          }
+        }
+
+        // Atualizar campos da tabela profile
+        const updateData = {
+          stripe_price_id: priceId,
+          subscription_status: subscription.status
+        };
+
+        // Só adiciona current_period_ends_at se for válido
+        if (currentPeriodEndsAt) {
+          updateData.current_period_ends_at = currentPeriodEndsAt;
+        }
+
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update(updateData)
+          .eq('id', profile.id);
+
+        if (updateError) {
+          console.error(`❌ Erro ao atualizar perfil ${profile.id}:`, updateError);
+          return res.status(200).send('OK (Erro ao atualizar perfil)');
+        }
+
+        console.log(`✅ Perfil ${profile.id} atualizado com nova subscription:`);
+        console.log(`   - Price ID: ${priceId}`);
+        console.log(`   - Status: ${subscription.status}`);
+        if (currentPeriodEndsAt) {
+          console.log(`   - Próximo período: ${currentPeriodEndsAt}`);
+        }
+
+      } catch (error) {
+        console.error(`❌ Erro ao processar customer.subscription.created:`, error);
+        return res.status(200).send('OK (Erro interno)');
+      }
+    }else if (event.type === 'customer.updated') {
+      const customer = event.data.object;
+      const customerId = customer.id;
+
+      const subscriptions = await stripe.subscriptions.list({
+        customer: customerId,
+        
+        limit: 1
+      });
+      console.log('subscriptions', subscriptions);
+
+    
+      if (subscriptions.data.length === 0) {
+        console.error(`❌ Nenhuma subscription ativa encontrada para customer ${customerId}`);
+        return res.status(200).send('OK (Subscription não encontrada)');
+      }
+
+      const subscription = subscriptions.data[0];
+      const priceId = subscription.items.data[0].price.id;
+      console.log('subscriptionList', subscription);
+
+      // Buscar o invoice para pegar o start_date
+      
+     
+
+      try {
+        // Buscar o usuário pelo customer_id do Stripe
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, stripe_customer_id, whatsapp_number')
+          .eq('stripe_customer_id', customerId)
+          .single();
+
+        if (profileError || !profile) {
+          console.error(`❌ Perfil não encontrado para customer ${customerId}:`, profileError);
+          return res.status(200).send('OK (Perfil não encontrado)');
+        }
+
+        const priceId = subscription.items.data[0].price.id;
+        console.log('priceId', priceId);
+
+        // Validar e converter current_period_end
+        let currentPeriodEndsAt = null;
+        if (subscription.expires_at && typeof subscription.expires_at === 'number') {
+          const date = new Date(subscription.expires_at * 1000);
+          console.log('date', date);
+          if (!isNaN(date.getTime())) {
+            currentPeriodEndsAt = date.toISOString();
+          }
+        }
+
+        // Atualizar campos da tabela profile
+        const updateData = {
+          stripe_price_id: priceId,
+          subscription_status: subscription.status
+        };
+
+        // Só adiciona current_period_ends_at se for válido
+        if (currentPeriodEndsAt) {
+          updateData.current_period_ends_at = currentPeriodEndsAt;
+        }
+
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update(updateData)
+          .eq('id', profile.id);
+
+        if (updateError) {
+          console.error(`❌ Erro ao atualizar perfil ${profile.id}:`, updateError);
+          return res.status(200).send('OK (Erro ao atualizar perfil)');
+        }
+
+        console.log(`✅ Perfil ${profile.id} atualizado com subscription modificada:`);
+        console.log(`   - Price ID: ${priceId}`);
+        console.log(`   - Status: ${subscription.status}`);
+        if (currentPeriodEndsAt) {
+          console.log(`   - Próximo período: ${currentPeriodEndsAt}`);
+        }
+
+        // Permitir acesso apenas se status for 'active' ou 'trialing'
+        const allowedStatuses = ['active', 'trialing'];
+        const shouldDisconnect = !allowedStatuses.includes(subscription.status);
+        
+        if (shouldDisconnect) {
+          console.log(`⚠️ Subscription com status '${subscription.status}' para usuário ${profile.id} - Desconectando dispositivo Baileys`);
+          
+          try {
+            // Importar o device manager
+          
+            
+            // Buscar o phone_number do perfil para identificar o dispositivo
+            if (profile.whatsapp_number) {
+              // Remover o código do país (+55) se presente
+              const cleanPhone = profile.whatsapp_number.replace(/^\+55/, '');
+              const deviceId = cleanPhone;
+              
+              console.log(`🔌 Desconectando dispositivo: ${deviceId}`);
+              
+              // Desconectar o dispositivo
+              await deviceManager.disconnectDevice(deviceId);
+              // Apagar a pasta de sessão do dispositivo Baileys para evitar religação após reinício do servidor
+              const fs = require('fs');
+              const path = require('path');
+              // O diretório das sessões Baileys (ajuste conforme sua estrutura)
+              const sessionsDir = path.join(__dirname, '..', '.sessions');
+              const sessionFolder = path.join(sessionsDir, profile.whatsapp_number);
+
+              if (fs.existsSync(sessionFolder)) {
+                try {
+                  fs.rmSync(sessionFolder, { recursive: true, force: true });
+                  console.log(`🗑️ Pasta de sessão ${sessionFolder} removida com sucesso`);
+                } catch (fsErr) {
+                  console.error(`❌ Erro ao remover pasta de sessão ${sessionFolder}:`, fsErr);
+                }
+              } else {
+                console.log(`ℹ️ Pasta de sessão ${sessionFolder} não encontrada (já removida ou nunca criada)`);
+              }
+              
+              console.log(`✅ Dispositivo ${deviceId} desconectado com sucesso`);
+            } else {
+              console.log(`⚠️ Phone number não encontrado para o perfil ${profile.id}`);
+            }
+          } catch (deviceError) {
+            console.error(`❌ Erro ao desconectar dispositivo:`, deviceError);
+            // Não falha o webhook por causa do erro de dispositivo
+          }
+        }
+
+        // Se status voltou para um status permitido, reconectar dispositivo
+        if (!shouldDisconnect) {
+          console.log(`✅ Subscription com status '${subscription.status}' para usuário ${profile.id} - Reconectando dispositivo Baileys`);
+          
+          try {
+            
+            
+            // Buscar o phone_number do perfil para identificar o dispositivo
+            if (profile.whatsapp_number) {
+              // Remover o código do país (+55) se presente
+              const cleanPhone = profile.whatsapp_number.replace(/^\+55/, '');
+              const deviceId = cleanPhone;
+              
+              console.log(`🔌 Reconectando dispositivo: ${deviceId}`);
+              
+              // Reconectar o dispositivo
+              await deviceManager.reconnectDevice(deviceId);
+              
+              console.log(`✅ Dispositivo ${deviceId} reconectado com sucesso`);
+            } else {
+              console.log(`⚠️ Phone number não encontrado para o perfil ${profile.id}`);
+            }
+          } catch (deviceError) {
+            console.error(`❌ Erro ao reconectar dispositivo:`, deviceError);
+            // Não falha o webhook por causa do erro de dispositivo
+          }
+        }
+
+      } catch (error) {
+        console.error(`❌ Erro ao processar customer.subscription.updated:`, error);
+        return res.status(200).send('OK (Erro interno)');
+      }
+    }else if (event.type === 'customer.subscription.deleted') {
+      const subscription = event.data.object;
+      const customerId = subscription.customer;
+      
+      console.log(`🗑️ Subscription cancelada para customer: ${customerId}`);
+
+      try {
+        // Buscar o usuário pelo customer_id do Stripe
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, stripe_customer_id')
+          .eq('stripe_customer_id', customerId)
+          .single();
+
+        if (profileError || !profile) {
+          console.error(`❌ Perfil não encontrado para customer ${customerId}:`, profileError);
+          return res.status(200).send('OK (Perfil não encontrado)');
+        }
+
+        // Validar e converter current_period_end
+        let currentPeriodEndsAt = null;
+        if (subscription.current_period_end && typeof subscription.current_period_end === 'number') {
+          const date = new Date(subscription.current_period_end * 1000);
+          if (!isNaN(date.getTime())) {
+            currentPeriodEndsAt = date.toISOString();
+          }
+        }
+
+        // Atualizar campos da tabela profile para refletir cancelamento
+        const updateData = {
+          subscription_status: 'canceled'
+        };
+
+        // Só adiciona current_period_ends_at se for válido
+        if (currentPeriodEndsAt) {
+          updateData.current_period_ends_at = currentPeriodEndsAt;
+        }
+
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update(updateData)
+          .eq('id', profile.id);
+
+        if (updateError) {
+          console.error(`❌ Erro ao atualizar perfil ${profile.id}:`, updateError);
+          return res.status(200).send('OK (Erro ao atualizar perfil)');
+        }
+        const fs = require('fs');
+        const path = require('path');
+        // O diretório das sessões Baileys (ajuste conforme sua estrutura)
+        const sessionsDir = path.join(__dirname, '..', '.sessions');
+        const sessionFolder = path.join(sessionsDir, profile.whatsapp_number);
+
+        if (fs.existsSync(sessionFolder)) {
+          try {
+            fs.rmSync(sessionFolder, { recursive: true, force: true });
+            console.log(`🗑️ Pasta de sessão ${sessionFolder} removida com sucesso`);
+          } catch (fsErr) {
+            console.error(`❌ Erro ao remover pasta de sessão ${sessionFolder}:`, fsErr);
+          }
+        } else {
+          console.log(`ℹ️ Pasta de sessão ${sessionFolder} não encontrada (já removida ou nunca criada)`);
+        }
+        
+
+        console.log(`✅ Perfil ${profile.id} atualizado com subscription cancelada:`);
+        console.log(`   - Status: canceled`);
+        if (currentPeriodEndsAt) {
+          console.log(`   - Período final: ${currentPeriodEndsAt}`);
+        }
+
+      } catch (error) {
+        console.error(`❌ Erro ao processar customer.subscription.deleted:`, error);
+        return res.status(200).send('OK (Erro interno)');
+      }
+    }else if (event.type === 'invoice.payment_succeeded') {
+      const invoice = event.data.object;
+      const customerId = invoice.customer;
+      
+      console.log(`💳 Pagamento de invoice bem-sucedido para customer: ${customerId}`);
+
+      try {
+        // Buscar o usuário pelo customer_id do Stripe
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, stripe_customer_id')
+          .eq('stripe_customer_id', customerId)
+          .single();
+
+        if (profileError || !profile) {
+          console.error(`❌ Perfil não encontrado para customer ${customerId}:`, profileError);
+          return res.status(200).send('OK (Perfil não encontrado)');
+        }
+
+        // Buscar informações da subscription
+        const subscriptions = await stripe.subscriptions.list({
+          customer: customerId,
+          status: 'active',
+          limit: 1
+        });
+        
+
+      
+        if (subscriptions.data.length === 0) {
+          console.error(`❌ Nenhuma subscription ativa encontrada para customer ${customerId}`);
+          return res.status(200).send('OK (Subscription não encontrada)');
+        }
+
+        const subscription = subscriptions.data[0];
+        const priceId = subscription.items.data[0].price.id;
+
+        // Buscar o invoice para pegar o start_date
+        const subscriptionInvoice = await stripe.subscriptions.retrieve(subscription.id);
+    
+        // Calcular data de vencimento baseada no start_date + 1 mês
+        let currentPeriodEndsAt = null;
+        if (subscriptionInvoice.start_date && typeof subscriptionInvoice.start_date === 'number') {
+          const startDate = new Date(subscriptionInvoice.start_date * 1000);
+          console.log('start_date:', startDate);
+          
+          // Adicionar 1 mês ao start_date
+          const endDate = new Date(startDate);
+          endDate.setMonth(endDate.getMonth() + 1);
+          
+          console.log('end_date (start + 1 mês):', endDate);
+          
+          if (!isNaN(endDate.getTime())) {
+            currentPeriodEndsAt = endDate.toISOString();
+          }
+        }
+
+        // Atualizar campos da tabela profile
+        const updateData = {
+          stripe_price_id: priceId,
+          subscription_status: subscription.status,
+          stripe_subscription_id: subscription.id
+        };
+
+        // Só adiciona current_period_ends_at se for válido
+        if (currentPeriodEndsAt) {
+          updateData.current_period_ends_at = currentPeriodEndsAt;
+        }
+        console.log('updateData:', updateData);
+
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update(updateData)
+          .eq('id', profile.id);
+
+        if (updateError) {
+          console.error(`❌ Erro ao atualizar perfil ${profile.id}:`, updateError);
+          return res.status(200).send('OK (Erro ao atualizar perfil)');
+        }
+
+      } catch (error) {
+        console.error(`❌ Erro ao processar invoice.payment_succeeded:`, error);
+        return res.status(200).send('OK (Erro interno)');
+      }
     }
 
     // 5. RESPOSTA DE SUCESSO PARA A STRIPE
     // Envia uma resposta 200 para a Stripe saber que recebemos a notificação com sucesso.
     res.status(200).json({ received: true });
   }
-
   // Exemplo de um controller corrigido
   async createOnboarding(req, res) {
     const { userId } = req.body;
@@ -155,8 +537,8 @@ class StripeController {
       // Passo 4: Criar o link de Onboarding (para contas novas) ou de Login (para contas existentes).
       const accountLink = await stripe.accountLinks.create({
         account: accountId,
-        refresh_url: `https://89406d00a79c.ngrok-free.app/profile`, // Redireciona para o perfil do usuário em caso de refresh
-        return_url: `https://89406d00a79c.ngrok-free.app/dashboard`, // Retorna para o dashboard principal
+        refresh_url: `${process.env.FRONTEND_URL}/dashboard`, // Redireciona para o perfil do usuário em caso de refresh
+        return_url: `${process.env.FRONTEND_URL}/dashboard`, // Retorna para o dashboard principal
         type: 'account_onboarding',
       });
 
@@ -217,8 +599,172 @@ class StripeController {
     console.error(`Erro ao buscar saldo na Stripe para o usuário:`, error);
     res.status(500).json({ error: 'Falha ao comunicar com o serviço de pagamentos.' });
   }
-}
+  }
 
+  async createSubscription(req, res) {
+    try {
+      const jwt = req.headers.authorization?.split(' ')[1];
+      if (!jwt) return res.status(401).json({ message: "Não autorizado." });
+      
+      const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
+      if (authError || !user) return res.status(401).json({ message: "Token inválido." });
+
+    if (!user.id) {
+      return res.status(401).json({ error: 'Não autorizado. Token de usuário inválido ou ausente.' });
+    }
+      const userId = user.id;
+      const userEmail = user.email; // E o email
+
+      const { priceId } = req.body;
+
+      if (!priceId) {
+        return res.status(400).json({ error: 'O ID do plano (priceId) é obrigatório.' });
+      }
+
+      // 1. Busca o perfil do utilizador para obter o stripe_customer_id
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('stripe_customer_id')
+        .eq('id', userId)
+        .single();
+
+      if (profileError) throw profileError;
+      console.log('profile', profile);
+
+      let customerId = profile.stripe_customer_id;
+      console.log('customerId', customerId);
+      
+      // 2. Se o utilizador não for um cliente na Stripe, cria um agora.
+      if (!customerId) {
+        console.log(`📝 Criando novo customer no Stripe para usuário ${userId}`);
+        const customer = await stripe.customers.create({
+          email: userEmail,
+          metadata: { supabaseUserId: userId }, // Liga o cliente Stripe ao seu utilizador
+        });
+        customerId = customer.id;
+        
+        // Salva o novo ID no seu banco de dados para futuras cobranças
+        await supabase
+          .from('profiles')
+          .update({ stripe_customer_id: customerId })
+          .eq('id', userId);
+        
+        console.log(`✅ Novo customer criado: ${customerId}`);
+      } else {
+        // 3. Verificar se o customer existe no Stripe
+        try {
+          console.log(`🔍 Verificando customer existente: ${customerId}`);
+          await stripe.customers.retrieve(customerId);
+          console.log(`✅ Customer ${customerId} existe no Stripe`);
+        } catch (stripeError) {
+          if (stripeError.code === 'resource_missing') {
+            console.log(`❌ Customer ${customerId} não existe no Stripe. Criando novo...`);
+            
+            // Customer não existe, criar um novo
+            const customer = await stripe.customers.create({
+              email: userEmail,
+              metadata: { supabaseUserId: userId },
+            });
+            customerId = customer.id;
+            
+            // Atualizar no banco
+            await supabase
+              .from('profiles')
+              .update({ stripe_customer_id: customerId })
+              .eq('id', userId);
+            
+            console.log(`✅ Novo customer criado: ${customerId}`);
+          } else {
+            throw stripeError;
+          }
+        }
+      }
+
+      // 3. Cria a Sessão de Checkout no modo de assinatura
+      console.log(`🔍 Criando sessão de checkout com:`);
+      console.log(`   - Customer ID: ${customerId}`);
+      console.log(`   - Price ID: ${priceId}`);
+      console.log(`   - User Email: ${userEmail}`);
+      
+      let session;
+      try {
+        session = await stripe.checkout.sessions.create({
+          payment_method_types: ['card'],
+          mode: 'subscription', // MUITO IMPORTANTE: Define a cobrança como recorrente
+          customer: customerId,
+          line_items: [
+            {
+              price: priceId, // O ID do preço do plano que veio do frontend
+              quantity: 1,
+            },
+          ],
+          // URLs para onde o utilizador será redirecionado
+          success_url: `${process.env.FRONTEND_URL}/onboarding/planos?showUploadStep=true`,
+          cancel_url: `${process.env.FRONTEND_URL}/onboarding/planos`, // Volta para a página de planos
+        });
+      } catch (sessionError) {
+        console.error('❌ Erro específico na criação da sessão:', sessionError);
+        console.error('❌ Código do erro:', sessionError.code);
+        console.error('❌ Mensagem do erro:', sessionError.message);
+        console.error('❌ Tipo do erro:', sessionError.type);
+        throw sessionError;
+      }
+
+      console.log(`✅ Sessão de Checkout gerada para o usuário ${userId}. ID: ${session.id}. URL: ${session.url}`);
+
+      // 4. Retorna o ID da sessão para o frontend
+      res.status(200).json({ sessionId: session.id, url: session.url });
+
+    } catch (error) {
+      console.error('Erro ao criar sessão de assinatura:', error);
+      res.status(500).json({ error: 'Falha ao iniciar o processo de subscrição.' });
+    }
+  }
+  async  cancelSubscription(req, res) {
+      
+        try {
+          // Passo 1: Autenticar o usuário a partir do token JWT no cabeçalho Authorization.
+        // 1. Autenticação (como você já tem)
+          const jwt = req.headers.authorization?.split(' ')[1];
+          if (!jwt) return res.status(401).json({ message: "Não autorizado." });
+          
+          const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
+          if (authError || !user) return res.status(401).json({ message: "Token inválido." });
+    
+        if (!user.id) {
+          return res.status(401).json({ error: 'Não autorizado. Token de usuário inválido ou ausente.' });
+        }
+    
+        // 1. Busca o perfil do utilizador para encontrar o ID da assinatura
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('stripe_subscription_id')
+          .eq('id', user.id)
+          .single();
+    
+        if (profileError || !profile?.stripe_subscription_id) {
+          return res.status(404).json({ error: 'Nenhuma assinatura ativa encontrada para este utilizador.' });
+        }
+        
+        const subscriptionId = profile.stripe_subscription_id;
+    
+        // 2. Chama a API da Stripe para agendar o cancelamento
+        await stripe.subscriptions.update(subscriptionId, {
+          cancel_at_period_end: true,
+        });
+        
+        // O status da assinatura no seu DB será atualizado pelo webhook que a Stripe envia
+        // em resposta a esta chamada, mas é uma boa prática já o atualizar aqui.
+        // O webhook irá confirmar esta mudança.
+    
+        res.status(200).json({ success: true, message: 'O seu plano será cancelado no final do período atual.' });
+    
+      } catch (error) {
+        console.error('Erro ao agendar o cancelamento da assinatura:', error);
+        res.status(500).json({ error: 'Falha ao processar o seu pedido de cancelamento.' });
+      }
+    
+  }
 }
 
 module.exports = new StripeController();

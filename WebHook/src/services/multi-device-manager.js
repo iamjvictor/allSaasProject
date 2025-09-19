@@ -2,15 +2,15 @@ const makeWASocket = require('@whiskeysockets/baileys').default;
 const { DisconnectReason, useMultiFileAuthState } = require('@whiskeysockets/baileys');
 const axios = require('axios');
 const qrcode = require('qrcode-terminal');
-const config = require('../config');
+
 const QRCode = require('qrcode'); 
 const fs = require('fs/promises');
 const fsSync = require('fs');  // Add this line for sync operations
 const path = require('path');
 const supabase = require('../clients/supabase-client');
-const LeadRepository = require('../repository/leadsRepository');
 
-
+// Garante que o .env seja carregado a partir da raiz do projeto, independentemente de onde o script é executado.
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 class WhatsAppDeviceManager {
   constructor() {
@@ -19,8 +19,6 @@ class WhatsAppDeviceManager {
     this.chatHistory = new Map();
     this.connectionFile = 'active_connections.json';
     this.sessionsDir = path.join(__dirname, '..', '..', '.sessions');
-    this.setupPeriodicHistoryCleanup();
-    
     // Create sessions directory if it doesn't exist
     if (!fsSync.existsSync(this.sessionsDir)) {  // Use fsSync instead of fs
       fsSync.mkdirSync(this.sessionsDir, { recursive: true });
@@ -32,43 +30,6 @@ class WhatsAppDeviceManager {
     if (!jid) return '';
     const [number] = jid.split('@')[0].split(':');
     return number;
-  }
-  setupPeriodicHistoryCleanup() {
-    const cleanupIntervalHours = 1; // Roda a cada 1 hora. Ajuste conforme necessário.
-    const maxInactiveHours = 24;   // Limpa históricos inativos por mais de 24 horas.
-
-    console.log(`🧹 Coletor de lixo de histórico de chat configurado para rodar a cada ${cleanupIntervalHours} hora(s).`);
-
-    setInterval(() => {
-      const now = new Date();
-      let cleanedCount = 0;
-      
-      console.log(`[Limpeza de Chat] Verificando ${this.chatHistory.size} conversas...`);
-
-      // Itera sobre todas as conversas no mapa de histórico
-      for (const [whatsappNumber, history] of this.chatHistory.entries()) {
-        // Pega a última mensagem para verificar seu timestamp
-        const lastMessage = history[history.length - 1];
-        
-        // Se não houver última mensagem, pula para a próxima
-        if (!lastMessage) continue;
-
-        const lastMessageTime = new Date(lastMessage.timestamp);
-        const timeDiffHours = (now - lastMessageTime) / (1000 * 60 * 60); // Diferença em horas
-
-        // Se a última mensagem for mais antiga que o nosso limite, apaga o histórico
-        if (timeDiffHours > maxInactiveHours) {
-          this.chatHistory.delete(whatsappNumber);
-          cleanedCount++;
-          console.log(`[Limpeza de Chat] Histórico de ${whatsappNumber} removido por inatividade.`);
-        }
-      }
-
-      if (cleanedCount > 0) {
-        console.log(`[Limpeza de Chat] Concluído. ${cleanedCount} histórico(s) inativo(s) removido(s) da memória.`);
-      }
-
-    }, cleanupIntervalHours * 60 * 60 * 1000); // Converte horas para milissegundos
   }
 
   // Função para gerar user_id baseado no número do WhatsApp
@@ -101,13 +62,14 @@ class WhatsAppDeviceManager {
 
     this.chatHistory.set(whatsappNumber, history);
   }
+
   // Função para formatar histórico para a API
   formatChatHistory(whatsappNumber) {
     const history = this.getChatHistory(whatsappNumber);
     if (history.length === 0) return "";
 
     return history.map(entry => {
-      const role = entry.sender === 'user' ? 'Usuário' : 'Alfred';
+      const role = entry.sender === 'user' ? 'Usuário' : 'Victor';
       return `${role}: ${entry.message}`;
     }).join('\n');
   }
@@ -120,9 +82,7 @@ class WhatsAppDeviceManager {
 
   // Função para obter histórico de um usuário específico
   getChatHistoryForUser(whatsappNumber) {
-
-    const chatHistoryFormatted = this.formatChatHistory(whatsappNumber);
-    return chatHistoryFormatted;
+    return this.getChatHistory(whatsappNumber);
   }
 
   // Função para obter estatísticas do histórico
@@ -171,7 +131,7 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
 
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
-    const device = this.devices.get(deviceConfig.id);
+    const device = this.devices.get(`device-${deviceConfig.whatsappNumber}`);
 
     // 🔹 QR Code
     if (qr && !qrGenerated) {
@@ -196,14 +156,19 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
           console.error(`[Reconexão Automática] Erro ao tentar reconectar ${deviceConfig.name}: ${err.message}`);
         });
       }
-    }
-
-    // 🔹 Conexão aberta
+    }    // 🔹 Conexão aberta
     if (connection === 'open') {
       if (device) device.connected = true;
 
       const connectedNumber = this.extractWhatsAppNumber(sock.user.id);
       const expectedNumber = deviceConfig.whatsappNumber;
+      this.devices.set(`device-${deviceConfig.whatsappNumber}`, {
+        sock,
+        config: deviceConfig,
+        connected: true,
+        whatsappNumber: deviceConfig.whatsappNumber,
+        error: null,
+      });
 
       if (connectedNumber !== expectedNumber) {
         console.error(`❌ VERIFICAÇÃO FALHOU para ${deviceConfig.name}.`);
@@ -227,49 +192,93 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
 }
 
 
+  setupMessageHandler(sock, deviceConfig) {
+    sock.ev.on('messages.upsert', async (m) => {
+      const msg = m.messages[0];
+      if (msg.key.fromMe) {
+          console.log(`📤 Eu enviei: ${msg.message?.conversation || JSON.stringify(msg.message)}`);
+      } else {
+          console.log(`📥 Recebi: ${msg.message?.conversation || JSON.stringify(msg.message)}`);
+      }
 
+      const userQuestion = msg.message?.conversation || 
+                          msg.message?.extendedTextMessage?.text;
 
-async connectDevice(deviceConfig, forceNew = false) {
-  
-  
+      if (!userQuestion || msg.key.fromMe) return;
 
-  return new Promise(async (resolve, reject) => {
-    try {
-      const deviceSessionDir = await this.prepareSessionDir(deviceConfig, forceNew);
-      const { state, saveCreds } = await useMultiFileAuthState(deviceSessionDir);
-   
-      
+      const from = msg.key.remoteJid;
+      const whatsappNumber = this.extractWhatsAppNumber(from);
 
-      const sock = makeWASocket({
-        auth: state,
-        printQRInTerminal: false,
-      }); 
+      try {
+        this.addToChatHistory(whatsappNumber, 'user', userQuestion);
+        const chatHistory = this.formatChatHistory(whatsappNumber);
+        console.log(`${process.env.IA_BASE_URL}/process_whatsapp_message`)
 
-      // Timeout de conexão
-      const connectionTimeout = setTimeout(() => {
-        reject(new Error('Timeout: A geração do QR Code demorou demais.'));
-      }, 20000);
+        const pythonResponse = await axios.post(
+          `${process.env.IA_BASE_URL}/process_whatsapp_message`,
+          {
+            user_id: deviceConfig.user_id,
+            message: userQuestion,
+          },
+          {
+            headers: {
+              'x-api-key': process.env.API_SECRET_KEY
+            }
+          }
+        );
+        const aiResponse = pythonResponse.data.response_gemini;
+        this.addToChatHistory(whatsappNumber, 'assistant', aiResponse);
 
-      // Setup eventos principais
-      this.setupConnectionEvents(sock, deviceConfig,saveCreds, resolve, reject, connectionTimeout);
-      
-      // Armazena instância
-      this.devices.set(deviceConfig.id, {
-        sock,
-        config: deviceConfig,
-        connected: false,
-        whatsappNumber: null,
-        error: null,
-      });
-      
+        await sock.sendMessage(from, { text: aiResponse });
 
-    } catch (error) {
-      console.error(`❌ Error connecting ${deviceConfig.name}:`, error.message);
-      reject(error);
-    }
-  });
-  
-}
+      } catch (error) {
+        console.error(`❌ ${deviceConfig.name} - Erro:`, error.message);
+        await sock.sendMessage(from, { 
+          text: 'Opa, deu um probleminha aqui pra conectar com a IA. Tenta de novo daqui a pouco!' 
+        });
+      }
+    });
+  }
+
+  async connectDevice(deviceConfig, forceNew = false) {
+    
+    
+
+    return new Promise(async (resolve, reject) => {
+      try {
+        const deviceSessionDir = await this.prepareSessionDir(deviceConfig, forceNew);
+        const { state, saveCreds } = await useMultiFileAuthState(deviceSessionDir);
+    
+        
+
+        const sock = makeWASocket({
+          auth: state,
+          printQRInTerminal: false,
+        }); 
+
+        // Timeout de conexão
+        const connectionTimeout = setTimeout(() => {
+          reject(new Error('Timeout: A geração do QR Code demorou demais.'));
+        }, 20000);
+
+       
+
+        // Setup eventos principais
+        this.setupConnectionEvents(sock, deviceConfig,saveCreds, resolve, reject, connectionTimeout);
+        this.setupMessageHandler(sock, deviceConfig);
+        
+
+        // Armazena instância
+        
+        
+
+      } catch (error) {
+        console.error(`❌ Error connecting ${deviceConfig.name}:`, error.message);
+        reject(error);
+      }
+    });
+    
+  }
 
   async reconnectAllDevices() {
     console.log('[INFO] 🔄 Iniciando processo de reconexão de todos os dispositivos...');
@@ -294,69 +303,48 @@ async connectDevice(deviceConfig, forceNew = false) {
     }
     console.log(`[INFO] 📊 Resumo da reconexão: ${successCount} sucesso(s), ${failureCount} falha(s).`);
   }
-
   async reconnectDevice(whatsappNumber) {
     const deviceId = `device-${whatsappNumber}`;
-     // --- LOGS DE DEPURACAO DE CAMINHOS ---
-    // A sua observação está correta, provavelmente é um problema de caminho.
-    // Estes logs vão mostrar-nos exatamente os caminhos que o Node.js está a usar.
-    console.log(`\n[DEBUG] [${deviceId}] A verificar caminhos para a sessão...`);
-    // 'this.sessionsDir' deve ser o caminho absoluto para a sua pasta de sessões.
-    // Exemplo esperado: '/caminho/para/o/projeto/.sessions'
-    console.log(`[DEBUG] [${deviceId}] Diretório base das sessões (this.sessionsDir): ${this.sessionsDir}`);
+    console.log(`[INFO] [${deviceId}] Iniciando reconexão...`);
 
     const deviceSessionDir = path.join(this.sessionsDir, whatsappNumber);
-    console.log(`[DEBUG] [${deviceId}] Caminho completo para a pasta da sessão a ser verificado: ${deviceSessionDir}`);
-    // --- FIM DOS LOGS DE DEPURACAO ---
-
-    console.log(`[INFO] [${deviceId}] 1. A iniciar tentativa de reconexão para o número ${whatsappNumber}`);
-
-    console.log(`[INFO] [${deviceId}] 1. A iniciar tentativa de reconexão para o número ${whatsappNumber}`);
-
-    // ETAPA 1: Verificar se o "passaporte" (creds.json) existe.
-    // Se não existir, não há como reconectar sem QR Code.
     const configPath = path.join(deviceSessionDir, 'device_config.json');
     const credsPath = path.join(deviceSessionDir, 'creds.json');
 
-    console.log(`[DEBUG] [${deviceId}] Caminho completo para a pasta da confi a ser verificado: ${configPath}`);
-
     if (!fsSync.existsSync(credsPath) || !fsSync.existsSync(configPath)) {
-      console.error(`[ERROR] [${deviceId}] A sessão é inválida. Faltam 'creds.json' ou 'device_config.json'.`);
+      console.error(`[ERROR] [${deviceId}] Sessão inválida. Faltam arquivos de credenciais.`);
       throw new Error(`Sessão inválida para ${whatsappNumber}.`);
     }
 
-    console.log(`[INFO] [${deviceId}] 2. Ficheiros de sessão encontrados.`);
-    
     let deviceConfig;
 
     try {
       deviceConfig = JSON.parse(await fs.readFile(configPath, 'utf-8'));
       const { name } = deviceConfig;
-      console.log(`[INFO] [${deviceId}] 3. A carregar configuração para o dispositivo: ${name}`);
+      console.log(`[INFO] [${deviceId}] Reconectando: ${name}`);
       
-      // ++ AQUI ESTÁ O PONTO-CHAVE ++
-      // A função 'useMultiFileAuthState' lê todos os ficheiros da pasta da sessão,
-      // incluindo o 'creds.json', e carrega-os para a variável 'state'.
-      console.log(`[INFO] [${deviceId}] 4. A carregar estado de autenticação (creds.json)...`);
       const { state, saveCreds } = await useMultiFileAuthState(deviceSessionDir);
-
-      
-      // ++ AQUI ACONTECE A MÁGICA ++
-      // Ao criar o socket, como a variável 'state' já contém as credenciais
-      // do 'creds.json', o Baileys NÃO vai gerar um QR Code.
-      // Em vez disso, ele vai tentar uma "retomada de sessão" (session resumption).
       const sock = makeWASocket({ auth: state });
       
-      console.log(`[INFO] [${deviceId}] 5. Socket criado. A tentar restabelecer conexão...`);
-
-      this.devices.set(deviceId, { sock, config: deviceConfig, connected: false });
+      // Adiciona o dispositivo ao Map
+      this.devices.set(deviceId, {
+        sock,
+        config: deviceConfig,
+        connected: true,
+        whatsappNumber: deviceConfig.whatsappNumber,
+        error: null,
+      });
+      
       this._setupEventListeners(sock, deviceConfig, saveCreds);
+      console.log(`[INFO] [${deviceId}] Reconexão iniciada com sucesso`);
 
     } catch (error) {
-       console.error(`[ERROR] [${deviceId}] Ocorreu um erro crítico durante o processo de reconexão:`, error);
+       console.error(`[ERROR] [${deviceId}] Erro na reconexão:`, error.message);
         throw error;
     }
+
   }
+
   async disconnectDevice(deviceId) {
     const device = this.devices.get(deviceId);
     if (!device) return;
@@ -369,8 +357,7 @@ async connectDevice(deviceConfig, forceNew = false) {
   }
 
   _setupEventListeners(sock, deviceConfig, saveCreds) {
-    const deviceId = deviceConfig.id;
-    
+    const deviceId = `device-${deviceConfig.whatsappNumber}`;  
 
     sock.ev.on('creds.update', saveCreds);
 
@@ -378,29 +365,30 @@ async connectDevice(deviceConfig, forceNew = false) {
       const { connection, lastDisconnect } = update;
       const device = this.devices.get(deviceId);
       
-      if (!device) return;
+      if (!device) {
+        console.error(`[ERROR] [${deviceId}] Device not found in Map!`);
+        return;
+      }
 
-      // Usamos um 'switch' para lidar de forma limpa com cada estado da conexão.
       switch (connection) {
         case 'connecting':
-          console.log(`[INFO] [${deviceId}] ⏳ A conectar... (Visto no evento)`);
+          console.log(`[INFO] [${deviceId}] ⏳ Conectando...`);
           break;
-
         case 'open':
           device.connected = true;
-          console.log(`[INFO] [${deviceId}] ✅ Conexão estabelecida e confirmada pela aplicação!`);
+          console.log(`[INFO] [${deviceId}] ✅ Conexão estabelecida!`);
           
-          // Adicionamos a validação de número robusta aqui.
+          // Validação de número
           const connectedNumberRaw = sock.user.id.split(':')[0];
           const expectedNumberRaw = deviceConfig.whatsappNumber;
           const connectedNumber = connectedNumberRaw.replace(/\D/g, '');
           const expectedNumber = expectedNumberRaw.replace(/\D/g, '');
 
           if (connectedNumber !== expectedNumber) {
-            console.error(`[ERROR] [${deviceId}] ❌ NÚMERO INCORRETO! Conectado: ${connectedNumber}, Esperado: ${expectedNumber}. A desconectar...`);
+            console.error(`[ERROR] [${deviceId}] ❌ NÚMERO INCORRETO! Conectado: ${connectedNumber}, Esperado: ${expectedNumber}`);
             this.disconnectDevice(deviceId);
           } else {
-            console.log(`[INFO] [${deviceId}] 👍 Verificação de número bem-sucedida.`);
+            console.log(`[INFO] [${deviceId}] 👍 Verificação de número bem-sucedida`);
           }
           break;
 
@@ -408,12 +396,11 @@ async connectDevice(deviceConfig, forceNew = false) {
           device.connected = false;
           const statusCode = lastDisconnect?.error?.output?.statusCode;
           
-          // Lógica de fecho corrigida: verificamos explicitamente se foi um logout.
           if (statusCode === DisconnectReason.loggedOut) {
-            console.error(`[ERROR] [${deviceId}] 🛑 Dispositivo desconectado pelo utilizador (logout). A remover sessão permanentemente.`);
+            console.error(`[ERROR] [${deviceId}] 🛑 Dispositivo desconectado pelo usuário`);
             this.disconnectDevice(deviceId);
           } else {
-            console.warn(`[WARN] [${deviceId}] 🔌 Conexão fechada por um motivo inesperado (Código: ${statusCode}). A biblioteca Baileys tentará reconectar-se automaticamente.`);
+            console.warn(`[WARN] [${deviceId}] 🔌 Conexão fechada (Código: ${statusCode})`);
           }
           break;
       }
@@ -422,94 +409,33 @@ async connectDevice(deviceConfig, forceNew = false) {
 
 
     sock.ev.on('messages.upsert', ({ messages }) => {
-      
       const msg = messages[0];
-     
-      console.log(`[INFO] [${deviceId}] 📩 ${msg.message?.conversation }`);
       if (msg.key.fromMe || !msg.message) return;
       this._handleIncomingMessage(sock, deviceConfig, msg);
     });
   }
 
   async _handleIncomingMessage(sock, deviceConfig, msg) {
-    // Extrair texto da mensagem de forma mais robusta
-    let userQuestion = '';
-    if (msg.message) {
-      userQuestion = msg.message.conversation || 
-                   msg.message.extendedTextMessage?.text || 
-                   msg.message.imageMessage?.caption ||
-                   msg.message.videoMessage?.caption ||
-                   msg.message.documentMessage?.caption ||
-                   '';
-    }
     const from = msg.key.remoteJid;
-
-    // Determinar o JID correto para identificar o remetente
-    // senderPn = número do remetente real (preferido)
-    // remoteJid = ID do chat (fallback, mas pode ser o mesmo número em chats individuais)
-    const senderJid = msg.key.senderPn || msg.key.remoteJid;
-    let senderNumber = senderJid ? senderJid.split('@')[0] : '';
-    
-    // Normalizar o número para garantir consistência
-    if (senderNumber) {
-      // Limpar caracteres não numéricos
-      senderNumber = senderNumber.replace(/\D/g, '');
-      
-      // Adicionar código do país se necessário (assumindo Brasil)
-      if (senderNumber.length === 11 && !senderNumber.startsWith('55')) {
-        senderNumber = '55' + senderNumber;
-      } else if (senderNumber.length === 10) {
-        senderNumber = '55' + senderNumber;
-      }
-    }
-
-    // Debug: verificar estrutura da mensagem
-    console.log(`[DEBUG] Estrutura da mensagem:`, {
-      remoteJid: msg.key.remoteJid,
-      senderPn: msg.key.senderPn,
-      senderJid: senderJid,
-      senderNumber: senderNumber,
-      userQuestion: userQuestion,
-      messageType: typeof userQuestion
-    });
+    const userQuestion = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
 
     
-    // Verificar se temos uma mensagem válida
-    if (!userQuestion || userQuestion.trim() === '') {
-      console.log(`[DEBUG] Mensagem vazia ou inválida:`, userQuestion);
-      return;
-    }
-    
-    // Verificar se temos um número válido
-    if (!senderNumber || senderNumber.length < 10) {
-      console.log(`[ERROR] Número do remetente inválido:`, senderNumber);
-      return;
-    }
-    
-    console.log(`[INFO] [${deviceConfig.id}] 📥 Mensagem de ${senderNumber}: "${userQuestion}"`);   
-    
-    // Criar/encontrar lead para o número do remetente
-    try {
-     
-      const lead = await LeadRepository.findOrCreateByWhatsappNumber(deviceConfig.user_id, senderNumber);
-      console.log(`[INFO] [${deviceConfig.id}] 👤 Lead encontrado/criado:`, lead.id);
-    } catch (error) {
-      console.error(`[ERROR] [${deviceConfig.id}] ❌ Erro ao criar/encontrar lead:`, error.message);
-      // Continuar mesmo com erro no lead, pois a mensagem ainda pode ser processada
-    }
+
+    // Se quiser processar também as mensagens enviadas por você, remova o filtro abaixo:
+    // if (msg.key.fromMe || !userQuestion) return;
+    if (!userQuestion) return;
+
+    console.log(`[INFO] [${deviceConfig.id}] 📥 Mensagem de ${from}: "${userQuestion}"`);
    
-    this.addToChatHistory(deviceConfig.whatsappNumber, 'user', userQuestion);
 
-    console.log(this.getChatHistoryForUser(deviceConfig.whatsappNumber))
     try {
-      // Chamada protegida à API de IA, enviando x-api-key no header
+      console.log('process_whatsapp_message _handleincomingmessage')
+      console.log(`${process.env.IA_BASE_URL}/process_whatsapp_message`)
       const pythonResponse = await axios.post(
         `${process.env.IA_BASE_URL}/process_whatsapp_message`,
         {
           user_id: deviceConfig.user_id,
           message: userQuestion,
-          chat_history: this.getChatHistoryForUser(deviceConfig.whatsappNumber),
-          lead_whatsapp_number: senderNumber
         },
         {
           headers: {
@@ -525,7 +451,7 @@ async connectDevice(deviceConfig, forceNew = false) {
 
     } catch (error) {
       console.error(`[ERROR] [${deviceConfig.id}] ❌ Erro ao processar mensagem com IA: ${error.message}`);
-      await sock.sendMessage(senderNumber, { text: 'Opa, tivemos um problema com a IA. Tente novamente.' });
+      await sock.sendMessage(from, { text: 'Opa, tivemos um problema com a IA. Tente novamente.' });
     }
   }
 
