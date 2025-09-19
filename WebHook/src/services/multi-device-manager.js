@@ -28,8 +28,18 @@ class WhatsAppDeviceManager {
   // Função para extrair o número do WhatsApp do JID
   extractWhatsAppNumber(jid) {
     if (!jid) return '';
-    const [number] = jid.split('@')[0].split(':');
-    return number;
+    
+    // Verifica se é um JID de WhatsApp individual (termina com @s.whatsapp.net)
+    if (jid.endsWith('@s.whatsapp.net')) {
+      const [number] = jid.split('@')[0].split(':');
+      const cleanNumber = number.replace(/\D/g, '');
+      console.log(`🔍 [EXTRACT] JID WhatsApp: ${jid} -> Number: ${cleanNumber}`);
+      return cleanNumber;
+    }
+    
+    // Se não for um JID de WhatsApp individual, retorna vazio
+    console.log(`⚠️ [EXTRACT] JID inválido (não é WhatsApp individual): ${jid}`);
+    return '';
   }
 
   // Função para gerar user_id baseado no número do WhatsApp
@@ -206,19 +216,22 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
 
       if (!userQuestion || msg.key.fromMe) return;
 
-      const from = msg.key.remoteJid;
+      const from = msg.key.senderPn;
       const whatsappNumber = this.extractWhatsAppNumber(from);
+      const messageId = msg.key.remoteJid;
 
       try {
         this.addToChatHistory(whatsappNumber, 'user', userQuestion);
         const chatHistory = this.formatChatHistory(whatsappNumber);
-        console.log(`${process.env.IA_BASE_URL}/process_whatsapp_message`)
+       console.log(`🔍 [DEBUG] chatHistory: ${chatHistory}`);
 
         const pythonResponse = await axios.post(
           `${process.env.IA_BASE_URL}/process_whatsapp_message`,
           {
             user_id: deviceConfig.user_id,
             message: userQuestion,
+            chat_history: chatHistory,
+            lead_whatsapp_number: whatsappNumber
           },
           {
             headers: {
@@ -229,11 +242,11 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
         const aiResponse = pythonResponse.data.response_gemini;
         this.addToChatHistory(whatsappNumber, 'assistant', aiResponse);
 
-        await sock.sendMessage(from, { text: aiResponse });
+        await sock.sendMessage(messageId, { text: aiResponse });
 
       } catch (error) {
         console.error(`❌ ${deviceConfig.name} - Erro:`, error.message);
-        await sock.sendMessage(from, { 
+        await sock.sendMessage(messageId, { 
           text: 'Opa, deu um probleminha aqui pra conectar com a IA. Tenta de novo daqui a pouco!' 
         });
       }
@@ -416,26 +429,30 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
   }
 
   async _handleIncomingMessage(sock, deviceConfig, msg) {
-    const from = msg.key.remoteJid;
+    const from = msg.key.senderPn;
     const userQuestion = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
-
+    const messageId = msg.key.remoteJid;
     
 
     // Se quiser processar também as mensagens enviadas por você, remova o filtro abaixo:
     // if (msg.key.fromMe || !userQuestion) return;
     if (!userQuestion) return;
 
-    console.log(`[INFO] [${deviceConfig.id}] 📥 Mensagem de ${from}: "${userQuestion}"`);
+    
+    const whatsappNumber = this.extractWhatsAppNumber(from);
    
 
     try {
-      console.log('process_whatsapp_message _handleincomingmessage')
-      console.log(`${process.env.IA_BASE_URL}/process_whatsapp_message`)
+      this.addToChatHistory(whatsappNumber, 'user', userQuestion);
+      const chatHistory = this.formatChatHistory(whatsappNumber);
+      console.log(`🔍 [DEBUG] chatHistory: ${chatHistory}`);
       const pythonResponse = await axios.post(
         `${process.env.IA_BASE_URL}/process_whatsapp_message`,
         {
           user_id: deviceConfig.user_id,
           message: userQuestion,
+          chat_history: chatHistory,
+          lead_whatsapp_number: whatsappNumber
         },
         {
           headers: {
@@ -443,15 +460,16 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
           }
         }
       );
-
+      
       const aiResponse = pythonResponse.data.response_gemini;
+      this.addToChatHistory(whatsappNumber, 'assistant', aiResponse);
       
       console.log(`[INFO] [${deviceConfig.id}] 📤 Enviando resposta da IA para ${from}`);
-      await sock.sendMessage(from, { text: aiResponse });
+      await sock.sendMessage(messageId, { text: aiResponse });
 
     } catch (error) {
       console.error(`[ERROR] [${deviceConfig.id}] ❌ Erro ao processar mensagem com IA: ${error.message}`);
-      await sock.sendMessage(from, { text: 'Opa, tivemos um problema com a IA. Tente novamente.' });
+      await sock.sendMessage(messageId, { text: 'Opa, tivemos um problema com a IA. Tente novamente.' });
     }
   }
 

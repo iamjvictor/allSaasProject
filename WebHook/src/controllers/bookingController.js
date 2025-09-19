@@ -166,20 +166,41 @@ class BookingController{
     async  getAvailabilityReport(req, res) {
   // 1. Busca todos os tipos de quarto do hotel
     const { userId } = req.params; // ou req.user.id vindo do middleware
-    const { checkIn: checkInDate, checkOut: checkOutDate,leadWhatsappNumber: lead_whatsapp_number } = req.body;
+    const { checkIn: checkInDate, checkOut: checkOutDate, leadWhatsappNumber: lead_whatsapp_number } = req.body || req.query;
+    
+    console.log("🔍 [DEBUG] req.params:", req.params);
+    console.log("🔍 [DEBUG] req.body:", req.body);
+    console.log("🔍 [DEBUG] req.query:", req.query);
+    console.log("🔍 [DEBUG] Parâmetros extraídos:", { userId, checkInDate, checkOutDate, lead_whatsapp_number });
+    
     const allRoomTypes = await roomRepository.getRoomsByUserId(userId);
+    
 
     console.log("testeando disponibilidade para os dias ",userId, checkInDate, checkOutDate, lead_whatsapp_number)
-    await LeadRepository.updateLeadStatus(userId, lead_whatsapp_number, 'morno');
-    console.log("Lead atualizado para Morno")
+    
+    try {
+      // Primeiro, tenta encontrar ou criar o lead
+      const lead = await LeadRepository.findOrCreateByWhatsappNumber(userId, lead_whatsapp_number);
+      console.log("🔍 [DEBUG LEAD] Lead encontrado/criado:", lead);
+      
+      // Depois atualiza o status
+      await LeadRepository.updateLeadStatus(userId, lead_whatsapp_number, 'morno');
+      console.log("✅ Lead atualizado para Morno")
+    } catch (leadError) {
+      console.error("❌ [ERROR] Erro ao atualizar status do lead:", leadError);
+      // Não interrompe o fluxo, apenas loga o erro
+    }
 
   // 2. Busca a contagem de reservas para todas eles de uma vez
     const bookingCounts = await BookingRepository.countAllConflictingBookings(userId, checkInDate, checkOutDate);
-    console.log(bookingCounts)
+    console.log("🔍 [DEBUG] bookingCounts Map:", bookingCounts);
+    console.log("🔍 [DEBUG] bookingCounts entries:", Array.from(bookingCounts.entries()));
     // 3. Monta o relatório final
     const report = allRoomTypes.map(roomType => {
       const occupiedCount = bookingCounts.get(roomType.id) || 0;
       const availableCount = roomType.total_quantity - occupiedCount;
+      
+      console.log(`🔍 [DEBUG] Room ${roomType.id} (${roomType.name}): total=${roomType.total_quantity}, occupied=${occupiedCount}, available=${availableCount}`);
       
       return {
         id: roomType.id,
@@ -190,8 +211,11 @@ class BookingController{
         description: roomType.description, // Adicionando a descrição
       };
     });
-    console.log(report)
+    console.log("🔍 [DEBUG] Relatório final:", report)
     res.status(200).json(report);
+  } catch (err) {
+    console.error("❌ [ERROR] Erro no getAvailabilityReport:", err);
+    res.status(500).json({ message: err.message || "Erro interno do servidor." });
   }
 }
   

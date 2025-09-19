@@ -119,6 +119,8 @@ class LeadsRepository {
    * Atualiza o status de um lead específico.
    */
   async updateLeadStatus(userId, whatsappNumber, newStatus) {
+    console.log(`🔍 [DEBUG LEAD] Atualizando status para userId: ${userId}, whatsapp: ${whatsappNumber}, status: ${newStatus}`);
+    
     const { data, error } = await supabase
       .from('leads')
       .update({ status: newStatus })
@@ -126,7 +128,12 @@ class LeadsRepository {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error(`❌ [ERROR LEAD] Erro ao atualizar status:`, error);
+      throw error;
+    }
+    
+    console.log(`✅ [SUCCESS LEAD] Status atualizado com sucesso:`, data);
     return data;
   }
 
