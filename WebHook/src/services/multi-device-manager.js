@@ -138,18 +138,37 @@ class WhatsAppDeviceManager {
 
 setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connectionTimeout) {
   let qrGenerated = false;
+  let qrTimeout = null;
 
   sock.ev.on('connection.update', async (update) => {
+    console.log(`🔍 [DEBUG] connection.update recebido:`, JSON.stringify(update, null, 2));
+    
     const { connection, lastDisconnect, qr } = update;
     const device = this.devices.get(`device-${deviceConfig.whatsappNumber}`);
 
     // 🔹 QR Code
     if (qr && !qrGenerated) {
+      console.log(`🔍 [DEBUG] QR Code recebido:`, qr);
       qrGenerated = true;
       clearTimeout(connectionTimeout);
-      const qrImage = await QRCode.toDataURL(qr);
-      require('qrcode-terminal').generate(qr, { small: true });
-      resolve(qrImage);
+      
+      try {
+        const qrImage = await QRCode.toDataURL(qr);
+        console.log(`🔍 [DEBUG] QR Code convertido para base64:`, qrImage.substring(0, 100) + '...');
+        require('qrcode-terminal').generate(qr, { small: true });
+        
+        // Timeout de 15 segundos para fechar socket se ninguém ler o QR
+        qrTimeout = setTimeout(() => {
+          console.log(`⏰ QR Code expirado após 15 segundos para ${deviceConfig.name}`);
+          sock.logout().catch(() => {});
+          reject(new Error('QR Code expirado. Ninguém leu o código em 15 segundos.'));
+        }, 30000);
+        
+        resolve(qrImage);
+      } catch (qrError) {
+        console.error(`❌ [ERROR] Erro ao converter QR Code:`, qrError);
+        reject(qrError);
+      }
     }
 
     // 🔹 Conexão fechada
@@ -168,9 +187,11 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
       }
     }    // 🔹 Conexão aberta
     if (connection === 'open') {
+      console.log(`🔍 [DEBUG] Conexão aberta para ${deviceConfig.name}`);
+      console.log(`🔍 [DEBUG] sock.user:`, sock.user);
       if (device) device.connected = true;
 
-      const connectedNumber = this.extractWhatsAppNumber(sock.user.id);
+      const connectedNumber = this.extractWhatsAppNumber(sock.user?.id);
       const expectedNumber = deviceConfig.whatsappNumber;
       this.devices.set(`device-${deviceConfig.whatsappNumber}`, {
         sock,
@@ -193,6 +214,7 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
 
       console.log(`✅ ${deviceConfig.name} conectado com sucesso! 📱 ${connectedNumber}`);
       clearTimeout(connectionTimeout);
+      if (qrTimeout) clearTimeout(qrTimeout);
       resolve('CONNECTED');
     }
   });
@@ -254,43 +276,51 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
   }
 
   async connectDevice(deviceConfig, forceNew = false) {
-    
-    
-
     return new Promise(async (resolve, reject) => {
+      let sock = null;
+      let connectionTimeout = null;
+      
       try {
+        // Previne conexões duplicadas
+        await this.preventDuplicateConnections(deviceConfig);
+
         const deviceSessionDir = await this.prepareSessionDir(deviceConfig, forceNew);
         const { state, saveCreds } = await useMultiFileAuthState(deviceSessionDir);
     
-        
-
-        const sock = makeWASocket({
+        sock = makeWASocket({
           auth: state,
           printQRInTerminal: false,
+          // Configurações para evitar timeouts
+          connectTimeoutMs: 60000, // 60 segundos
+          keepAliveIntervalMs: 30000, // 30 segundos
+          retryRequestDelayMs: 250, // 250ms entre tentativas
+          maxMsgRetryCount: 5, // Máximo 5 tentativas
+          defaultQueryTimeoutMs: 60000, // 60 segundos para queries
         }); 
 
-        // Timeout de conexão
-        const connectionTimeout = setTimeout(() => {
+        // Timeout de conexão (30 segundos para gerar QR)
+        connectionTimeout = setTimeout(() => {
+          console.log(`⏰ Timeout de conexão para ${deviceConfig.name}`);
+          if (sock) {
+            sock.logout().catch(() => {});
+          }
           reject(new Error('Timeout: A geração do QR Code demorou demais.'));
-        }, 20000);
-
-       
+        }, 30000);
 
         // Setup eventos principais
-        this.setupConnectionEvents(sock, deviceConfig,saveCreds, resolve, reject, connectionTimeout);
+        this.setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connectionTimeout);
         this.setupMessageHandler(sock, deviceConfig);
-        
-
-        // Armazena instância
-        
-        
 
       } catch (error) {
         console.error(`❌ Error connecting ${deviceConfig.name}:`, error.message);
+        // Limpa timeouts em caso de erro
+        if (connectionTimeout) clearTimeout(connectionTimeout);
+        if (sock) {
+          sock.logout().catch(() => {});
+        }
         reject(error);
       }
     });
-    
   }
 
   async reconnectAllDevices() {
@@ -371,16 +401,28 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
 
   _setupEventListeners(sock, deviceConfig, saveCreds) {
     const deviceId = `device-${deviceConfig.whatsappNumber}`;  
+    let qrTimeout = null;
 
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', (update) => {
-      const { connection, lastDisconnect } = update;
+      const { connection, lastDisconnect, qr } = update;
       const device = this.devices.get(deviceId);
       
       if (!device) {
         console.error(`[ERROR] [${deviceId}] Device not found in Map!`);
         return;
+      }
+
+      // 🔹 QR Code - Timeout de 15 segundos
+      if (qr) {
+        console.log(`[INFO] [${deviceId}] 📱 QR Code gerado`);
+        
+        // Timeout de 15 segundos para fechar socket se ninguém ler o QR
+        qrTimeout = setTimeout(() => {
+          console.log(`⏰ [${deviceId}] QR Code expirado após 15 segundos`);
+          sock.logout().catch(() => {});
+        }, 30000);
       }
 
       switch (connection) {
@@ -390,6 +432,12 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
         case 'open':
           device.connected = true;
           console.log(`[INFO] [${deviceId}] ✅ Conexão estabelecida!`);
+          
+          // Limpa timeout do QR quando conectar
+          if (qrTimeout) {
+            clearTimeout(qrTimeout);
+            console.log(`[INFO] [${deviceId}] ✅ QR Code lido com sucesso!`);
+          }
           
           // Validação de número
           const connectedNumberRaw = sock.user.id.split(':')[0];
@@ -409,6 +457,11 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
           device.connected = false;
           const statusCode = lastDisconnect?.error?.output?.statusCode;
           
+          // Limpa timeout do QR quando desconectar
+          if (qrTimeout) {
+            clearTimeout(qrTimeout);
+          }
+          
           if (statusCode === DisconnectReason.loggedOut) {
             console.error(`[ERROR] [${deviceId}] 🛑 Dispositivo desconectado pelo usuário`);
             this.disconnectDevice(deviceId);
@@ -422,7 +475,9 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
 
 
     sock.ev.on('messages.upsert', ({ messages }) => {
+      
       const msg = messages[0];
+      
       if (msg.key.fromMe || !msg.message) return;
       this._handleIncomingMessage(sock, deviceConfig, msg);
     });
@@ -440,6 +495,7 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
 
     
     const whatsappNumber = this.extractWhatsAppNumber(from);
+    console.log(`🔍 [DEBUG] whatsappNumber: ${whatsappNumber}`);
    
 
     try {
@@ -528,6 +584,42 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
     }
     return null;
   }
+
+  // Função para limpar conexões órfãs e evitar múltiplas instâncias
+  async cleanupOrphanedConnections() {
+    console.log('🧹 Limpando conexões órfãs...');
+    
+    for (const [deviceId, device] of this.devices) {
+      try {
+        if (device.sock && !device.connected) {
+          console.log(`🗑️ Removendo conexão órfã: ${deviceId}`);
+          await device.sock.logout();
+          this.devices.delete(deviceId);
+        }
+      } catch (error) {
+        console.error(`❌ Erro ao limpar conexão ${deviceId}:`, error.message);
+        this.devices.delete(deviceId);
+      }
+    }
+    
+    console.log(`✅ Limpeza concluída. Dispositivos ativos: ${this.devices.size}`);
+  }
+
+  // Função para verificar e limpar conexões duplicadas
+  async preventDuplicateConnections(deviceConfig) {
+    const deviceId = `device-${deviceConfig.whatsappNumber}`;
+    const existingDevice = this.devices.get(deviceId);
+    
+    if (existingDevice) {
+      console.log(`⚠️ [WARNING] Dispositivo ${deviceId} já existe. Limpando conexão anterior...`);
+      try {
+        await existingDevice.sock.logout();
+      } catch (error) {
+        console.error(`❌ Erro ao desconectar dispositivo anterior:`, error.message);
+      }
+      this.devices.delete(deviceId);
+    }
+  }
 }
 
-module.exports = WhatsAppDeviceManager;
+module.exports = new WhatsAppDeviceManager();

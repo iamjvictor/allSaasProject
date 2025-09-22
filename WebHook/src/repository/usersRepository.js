@@ -74,13 +74,23 @@ class UserRepository {
   async getProfile(userId) {
     const { data, error } = await supabase
       .from('profiles')
-      .select()
+      .select('*')
       .eq('id', userId)
       .single();
 
     if (error) {
       throw error;
     }
+    
+    // Buscar o email da tabela auth.users separadamente
+    if (data) {
+      const { data: authData, error: authError } = await supabase.auth.admin.getUserById(userId);
+      
+      if (!authError && authData && authData.user && authData.user.email) {
+        data.email = authData.user.email;
+      }
+    }
+    
     return data;
   }
   async addDDeviceIdToUser(userId, deviceId) {

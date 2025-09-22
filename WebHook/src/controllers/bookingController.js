@@ -6,6 +6,7 @@ const roomRepository = require('../repository/roomRepository');
 const paymentService = require('../services/paymentService');
 const paymentRepository = require('../repository/paymentRepository');
 const usersRepository = require('../repository/usersRepository');
+const emailService = require('../services/emailService');
 
 class BookingController{
 
@@ -36,17 +37,37 @@ class BookingController{
               //paymentIntent.id, // Liga a reserva à intenção de pagamento
           };
           const pendingBooking = await BookingRepository.createPendingBooking(bookingData);
-          // 4. Gera o link de pagamento usando o serviço
-      
-          const checkoutResult = await paymentService.createCheckoutSession(bookingData,pendingBooking, roomTypeDetails);
           
+          // 4. Gera o link de pagamento usando o serviço
+          let checkoutResult;
+          try {
+            checkoutResult = await paymentService.createCheckoutSession(bookingData, pendingBooking, roomTypeDetails);
+          } catch (checkoutError) {
+            const hotelOwnerProfile = await usersRepository.getProfile(user_id);
+            console.log("Perfil do dono do hotel:", hotelOwnerProfile);
+            const hotelOwnerEmail = hotelOwnerProfile.email;
+            const hotelOwnerName = hotelOwnerProfile.full_name;
+            const errorDetails = checkoutError.message;
+            await emailService.sendStripeErrorNotification(hotelOwnerEmail, hotelOwnerName, errorDetails);
+            console.error("❌ [ERRO CHECKOUT] Erro ao criar checkout:", checkoutError);
+            
+            // Cancelar o agendamento criado em caso de erro no checkout
+            try {
+              await BookingRepository.cancelBooking(pendingBooking);
+              console.log(`✅ [CANCELAMENTO] Agendamento ${pendingBooking} cancelado com sucesso`);
+            } catch (cancelError) {
+              console.error(`❌ [ERRO CANCELAMENTO] Falha ao cancelar agendamento ${pendingBooking}:`, cancelError);
+            }
+            
+            throw new Error(`Falha ao gerar link de pagamento: ${checkoutError.message}`);
+          }
 
           const paymentId = checkoutResult.paymentId;
           const paymentUrl = checkoutResult.paymentUrl;
 
-        await BookingRepository.updatePaymentInfo(pendingBooking, paymentId);
-        await LeadRepository.updateLeadStatus(user_id, lead_whatsapp_number, 'quente');
-        res.status(201).json({ message: "Pré-reserva criada com sucesso!", bookingId: pendingBooking, paymentUrl: paymentUrl });
+          await BookingRepository.updatePaymentInfo(pendingBooking, paymentId);
+          await LeadRepository.updateLeadStatus(user_id, lead_whatsapp_number, 'quente');
+          res.status(201).json({ message: "Pré-reserva criada com sucesso!", bookingId: pendingBooking, paymentUrl: paymentUrl });
           
         }catch (err) {
           res.status(500).json({ message: err.message || "Erro interno do servidor." });
@@ -213,10 +234,10 @@ class BookingController{
     });
     console.log("🔍 [DEBUG] Relatório final:", report)
     res.status(200).json(report);
-  } catch (err) {
-    console.error("❌ [ERROR] Erro no getAvailabilityReport:", err);
-    res.status(500).json({ message: err.message || "Erro interno do servidor." });
-  }
+      } catch (err) {
+      console.error("❌ [ERROR] Erro no getAvailabilityReport:", err);
+      res.status(500).json({ message: err.message || "Erro interno do servidor." });
+    }
 }
   
 

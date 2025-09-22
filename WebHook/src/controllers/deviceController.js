@@ -1,11 +1,11 @@
-const WhatsAppDeviceManager = require('../services/multi-device-manager');
+const deviceManager = require('../services/multi-device-manager');
 const config = require('../config');
 const usersRepository = require('../repository/usersRepository');
 
 class DeviceController {
-  constructor(deviceManager = null) {
-    // Se uma instância for passada, usa ela; senão cria uma nova
-    this.deviceManager = deviceManager || new WhatsAppDeviceManager();
+  constructor(deviceManagerInstance = null) {
+    // Se uma instância for passada, usa ela; senão usa a singleton
+    this.deviceManager = deviceManagerInstance || deviceManager;
   }
 
   async startSingleDevice(deviceId) {
@@ -75,15 +75,46 @@ class DeviceController {
   async connectDeviceAndReturnQr(req, res) {
     try {
       const deviceConfig = req.body;
+      
+      // Verifica se o dispositivo já está conectado
+      const existingDevice = this.deviceManager.devices.get(deviceConfig.id);
+      if (existingDevice && existingDevice.connected) {
+        return res.status(200).json({ 
+          message: 'Dispositivo já está conectado.',
+          connected: true,
+          qrCodeBase64: null
+        });
+      }
+      
       // Adiciona o deviceConfig à lista de configs, se ainda não existir
       if (!this.deviceManager.deviceConfigs.find(d => d.id === deviceConfig.id)) {
         this.deviceManager.deviceConfigs.push(deviceConfig);
       }
-      // Chama o manager e retorna a promise (QR code ou 'CONNECTED')
+      
       const result = await this.deviceManager.connectDevice(deviceConfig, true);
+
+      
+      // Se retornou 'CONNECTED', significa que já estava conectado
+      if (result === 'CONNECTED') {
+        
+        return res.json({ 
+          message: 'Dispositivo conectado com sucesso.',
+          connected: true,
+          qrCodeBase64: null
+        });
+      }
+      
+      // Se retornou o QR code, envia no formato correto
+      console.log(`🔍 [DEBUG] QR Code retornado, salvando no banco...`);
       await usersRepository.addDDeviceIdToUser(deviceConfig.user_id, deviceConfig.id);
-      res.json({ result });
+      console.log(`🔍 [DEBUG] Enviando resposta com QR Code...`);
+      res.json({ 
+        qrCodeBase64: result,
+        connected: false,
+        message: 'QR Code gerado com sucesso. Escaneie para conectar.'
+      });
     } catch (err) {
+      console.error('Erro ao conectar dispositivo:', err);
       res.status(500).json({ error: err.message });
     }
   }

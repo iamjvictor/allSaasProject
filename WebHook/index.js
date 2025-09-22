@@ -1,5 +1,5 @@
 const express = require('express');
-const WhatsAppDeviceManager = require('./src/services/multi-device-manager');
+const deviceManager = require('./src/services/multi-device-manager');
 const supabase = require('./src/clients/supabase-client'); // Corrigido para usar o cliente exportado
 const { z } = require('zod'); // 1. Importe o Zod
 const bcrypt = require('bcryptjs'); // Importe a biblioteca de hash
@@ -8,9 +8,13 @@ const qr = require('qr-image'); // Add this at the top of your file with other r
 const fs = require('fs');
 const DeviceController = require('./src/controllers/deviceController');
 
-// Criar uma instância única do deviceManager e do controller
-const deviceManager = new WhatsAppDeviceManager();
+// Criar uma instância única do controller usando a instância singleton
 const deviceController = new DeviceController(deviceManager);
+
+// Limpar conexões órfãs na inicialização
+deviceManager.cleanupOrphanedConnections().catch(err => {
+  console.error('❌ Erro ao limpar conexões órfãs:', err.message);
+});
 const app = express();
 const userRepository = require('./src/repository/usersRepository'); // Corrigido para usar o repositório exportado
 const cors = require('cors');
@@ -23,7 +27,7 @@ const bookingRoutes = require('./src/routes/booksRoutes');
 const integrationRoutes = require('./src/routes/integrationRoutes');
 const cronRoutes = require('./src/routes/cronRoutes');
 const documentChunksRoutes = require('./src/routes/documentChunkRoutes');
-const { createDeviceRoutes } = require('./src/routes/deviceRoutes');
+const deviceRoutes = require('./src/routes/deviceRoutes');
 const stripeRoutes = require('./src/routes/stripeRoutes');
 
 app.use(cors());
@@ -38,8 +42,6 @@ app.use('/api/leads', leadsRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/integrations', integrationRoutes);
 app.use('/api/cron', cronRoutes);
-// Usar a mesma instância do deviceManager para as rotas
-const deviceRoutes = createDeviceRoutes(deviceController);
 app.use('/api/devices', deviceRoutes);
 app.use('/api/document-chunks', documentChunksRoutes);
 
@@ -92,6 +94,79 @@ app.get('/qrcode/:whatsappNumber', async (req, res) => {
     
 
     res.status(200).json({ qrCodeBase64 });
+
+  } catch (error) {
+    console.error(`Erro ao gerar QR Code para ${whatsappNumber}:`, error);
+    res.status(500).json({ error: 'Ocorreu um erro interno no servidor.' });
+  }
+});
+
+// Rota para servir o QR code como imagem PNG
+app.get('/qrcode-image/:whatsappNumber', async (req, res) => {
+  const { whatsappNumber } = req.params;
+  if (!whatsappNumber) {
+    return res.status(400).json({ error: 'O número do WhatsApp é obrigatório na URL.' });
+  }
+
+  const normalizedWhatsAppNumber = normalizePhoneNumber(whatsappNumber);
+  const deviceId = `device-${normalizedWhatsAppNumber}`;
+
+  try {
+    // 1. Verifica se o dispositivo já está conectado
+    const existingDevice = deviceManager.devices.get(deviceId);
+
+    if (existingDevice && existingDevice.connected) {
+      return res.status(200).json({ 
+        message: 'Dispositivo já está conectado.',
+        connected: true 
+      });
+    }
+
+    // 2. Se não estiver conectado, busca os dados do usuário no banco
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('whatsapp_number', normalizedWhatsAppNumber)
+      .single();
+
+    if (userError || !userData) {
+      console.error('Erro ao buscar usuário ou usuário não encontrado:', userError);
+      return res.status(404).json({ error: 'Usuário não encontrado para este número de WhatsApp.' });
+    }
+
+    // 3. Monta a configuração e inicia a conexão para gerar o QR Code
+    const deviceConfig = {
+      id: deviceId,
+      name: `Dispositivo ${userData.business_name || userData.name}`,
+      authPath: `auth_info_baileys_${normalizedWhatsAppNumber}`,
+      user_id: userData.id,
+      whatsappNumber: normalizedWhatsAppNumber,
+    };
+    
+    // Gera o QR Code
+    const qrCodeBase64 = await deviceManager.connectDevice(deviceConfig, true);
+      
+    if (!qrCodeBase64) {
+      return res.status(500).json({ error: 'Não foi possível gerar o QR Code a tempo.' });
+    }
+    
+    // Remove o prefixo data:image/png;base64, se existir
+    const base64Data = qrCodeBase64.replace(/^data:image\/png;base64,/, '');
+    
+    // Converte base64 para buffer
+    const imageBuffer = Buffer.from(base64Data, 'base64');
+    
+    // Define headers para imagem PNG
+    res.set({
+      'Content-Type': 'image/png',
+      'Content-Length': imageBuffer.length,
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
+    
+    // Envia a imagem
+    res.send(imageBuffer);
 
   } catch (error) {
     console.error(`Erro ao gerar QR Code para ${whatsappNumber}:`, error);

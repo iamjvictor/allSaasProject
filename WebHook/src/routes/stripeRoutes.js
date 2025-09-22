@@ -42,5 +42,10 @@ router.get(
   StripeController.getBalance
 );
 
+router.get(
+  '/account-status/:userId', 
+  express.json(),
+  StripeController.checkAccountStatus
+);
 
 module.exports = router;

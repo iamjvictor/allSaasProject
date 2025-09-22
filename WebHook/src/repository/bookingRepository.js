@@ -303,6 +303,24 @@ class BookingRepository {
 
   // === MÉTODOS PARA LIMPEZA DE RESERVAS ANTIGAS ===
 
+  // Cancela uma reserva (atualiza status para 'cancelada')
+  async cancelBooking(bookingId) {
+    const { data, error } = await supabase
+      .from('bookings')
+      .update({ status: 'cancelada' })
+      .eq('id', bookingId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error(`Erro ao cancelar reserva ${bookingId}:`, error);
+      throw new Error(`Falha ao cancelar reserva: ${error.message}`);
+    }
+
+    console.log(`Reserva ${bookingId} cancelada com sucesso`);
+    return data;
+  }
+
   // Deleta uma reserva específica
   async deleteBooking(bookingId) {
     const { error } = await supabase

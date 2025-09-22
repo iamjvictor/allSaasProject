@@ -24,13 +24,23 @@ class PaymentService {
         throw new Error(`Dono do hotel (ID: ${booking.userId}) não tem uma conta Stripe conectada. Por favor, complete o onboarding.`);
       }
 
-      // Opcional: Verificar se a conta conectada está habilitada para charges
-      // Se você monitorar 'stripe_charges_enabled' no seu DB
-      // if (!hotelOwnerProfile.stripe_charges_enabled) {
-      //   throw new Error("A conta Stripe do dono do hotel não está habilitada para receber pagamentos.");
-      // }
-
       const hotelOwnerStripeAccountId = hotelOwnerProfile.stripe_id;
+
+      // Verificar se a conta conectada tem as capacidades necessárias
+      const account = await stripe.accounts.retrieve(hotelOwnerStripeAccountId);
+      
+      if (!account.charges_enabled) {
+        throw new Error("A conta Stripe do dono do hotel não está habilitada para receber pagamentos. Complete o onboarding primeiro.");
+      }
+      
+      if (!account.transfers_enabled) {
+        throw new Error("A conta Stripe do dono do hotel não está habilitada para transferências. Complete o onboarding primeiro.");
+      }
+      
+      // Verificar se as capacidades estão ativas
+      if (account.capabilities?.transfers !== 'active' || account.capabilities?.card_payments !== 'active') {
+        throw new Error("A conta Stripe do dono do hotel não possui as capacidades necessárias ativas. Complete o onboarding primeiro.");
+      }
 
       // 2. Calcular o preço total em centavos
       const calculatedTotalPriceCents = Math.round(booking.totalPrice * 100);
@@ -53,7 +63,7 @@ class PaymentService {
               currency: 'brl',
               product_data: {
                 name: `Reserva: ${roomType.name}`,
-                description: `Hospedagem de ${booking.checkInDate} a ${booking.checkOutDate}`,
+                description: `Hospedagem de ${booking.check_in_date} a ${booking.check_out_date}`,
               },
               unit_amount: calculatedTotalPriceCents,
             },
@@ -66,7 +76,7 @@ class PaymentService {
         expires_at: expiresAt, // Sessão expira em 15 minutos
         metadata: {
           booking_id: pendingID,
-          hotel_owner_user_id: booking.user_id, // ID do dono do hotel na sua plataforma
+          hotel_owner_user_id: booking.userId, // ID do dono do hotel na sua plataforma
           hotel_owner_stripe_account_id: hotelOwnerStripeAccountId, // ID da conta conectada
         },
         // --- CONFIGURAÇÃO DO STRIPE CONNECT ---

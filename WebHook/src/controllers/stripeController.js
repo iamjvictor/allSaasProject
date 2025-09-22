@@ -9,8 +9,7 @@ const integrationRepository = require('../repository/integrationRepository');
 const BookingController = require('./bookingController');
 const bookingController = new BookingController();
 const supabase = require('../clients/supabase-client');
-const WhatsAppDeviceManager = require('../services/multi-device-manager');
-const deviceManager = new WhatsAppDeviceManager();
+const deviceManager = require('../services/multi-device-manager');
 
 
 // Pegue o "Segredo do endpoint" que a Stripe te deu e coloque no seu .env
@@ -470,6 +469,47 @@ class StripeController {
     // Envia uma resposta 200 para a Stripe saber que recebemos a notificação com sucesso.
     res.status(200).json({ received: true });
   }
+  // Função para verificar e atualizar capacidades da conta Stripe
+  async checkAndUpdateAccountCapabilities(accountId) {
+    try {
+      console.log(`Verificando capacidades da conta Stripe: ${accountId}`);
+      
+      // Buscar informações da conta
+      const account = await stripe.accounts.retrieve(accountId);
+      
+      console.log('Status da conta:', {
+        id: account.id,
+        charges_enabled: account.charges_enabled,
+        transfers_enabled: account.transfers_enabled,
+        capabilities: account.capabilities
+      });
+
+      // Verificar se as capacidades necessárias estão habilitadas
+      const needsTransfers = !account.capabilities?.transfers || account.capabilities.transfers === 'inactive';
+      const needsCardPayments = !account.capabilities?.card_payments || account.capabilities.card_payments === 'inactive';
+
+      if (needsTransfers || needsCardPayments) {
+        console.log('Atualizando capacidades da conta...');
+        
+        // Atualizar capacidades da conta
+        const updatedAccount = await stripe.accounts.update(accountId, {
+          capabilities: {
+            card_payments: { requested: true },
+            transfers: { requested: true },
+          }
+        });
+
+        console.log('Capacidades atualizadas:', updatedAccount.capabilities);
+        return updatedAccount;
+      }
+
+      return account;
+    } catch (error) {
+      console.error('Erro ao verificar/atualizar capacidades da conta:', error);
+      throw error;
+    }
+  }
+
   // Exemplo de um controller corrigido
   async createOnboarding(req, res) {
     const { userId } = req.body;
@@ -534,7 +574,10 @@ class StripeController {
           console.log(`Conta Stripe existente encontrada para o usuário ${userId}: ${accountId}`);
       }
 
-      // Passo 4: Criar o link de Onboarding (para contas novas) ou de Login (para contas existentes).
+      // Passo 4: Verificar e atualizar capacidades da conta se necessário
+      await this.checkAndUpdateAccountCapabilities(accountId);
+
+      // Passo 5: Criar o link de Onboarding (para contas novas) ou de Login (para contas existentes).
       const accountLink = await stripe.accountLinks.create({
         account: accountId,
         refresh_url: `${process.env.FRONTEND_URL}/dashboard`, // Redireciona para o perfil do usuário em caso de refresh
@@ -542,12 +585,60 @@ class StripeController {
         type: 'account_onboarding',
       });
 
-      // Passo 5: Retornar a URL para o frontend.
+      // Passo 6: Retornar a URL para o frontend.
       res.json({ url: accountLink.url });
 
     } catch (error) {
       console.error('Processo de onboarding do Stripe falhou:', error);
       res.status(500).json({ error: 'Ocorreu um erro inesperado durante a conexão com a Stripe.' });
+    }
+  }
+
+  // Endpoint para verificar status da conta Stripe
+  async checkAccountStatus(req, res) {
+    try {
+      const { userId } = req.params;
+
+      if (!userId) {
+        return res.status(400).json({ error: 'User ID é obrigatório.' });
+      }
+
+      // Buscar o perfil do usuário
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('stripe_id')
+        .eq('id', userId)
+        .single();
+
+      if (profileError || !profile) {
+        return res.status(404).json({ error: 'Perfil do usuário não encontrado.' });
+      }
+
+      if (!profile.stripe_id) {
+        return res.status(400).json({ 
+          error: 'Usuário não possui conta Stripe conectada.',
+          needsOnboarding: true 
+        });
+      }
+
+      // Verificar status da conta Stripe
+      const account = await stripe.accounts.retrieve(profile.stripe_id);
+      
+      const status = {
+        accountId: account.id,
+        chargesEnabled: account.charges_enabled,
+        transfersEnabled: account.transfers_enabled,
+        capabilities: account.capabilities,
+        isComplete: account.charges_enabled && account.transfers_enabled && 
+                   account.capabilities?.transfers === 'active' && 
+                   account.capabilities?.card_payments === 'active'
+      };
+
+      res.json(status);
+
+    } catch (error) {
+      console.error('Erro ao verificar status da conta Stripe:', error);
+      res.status(500).json({ error: 'Erro interno do servidor.' });
     }
   }
   async getBalance(req, res) {

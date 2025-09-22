@@ -2,7 +2,8 @@
 const supabase = require('../clients/supabase-client.js');
 const { registerSchema } = require('../validators/authValidator');
 const { google } = require('googleapis');
-
+  // Importar o multi-device-manager dinamicamente
+const multiDeviceManager = require('../services/multi-device-manager');
 const userRepository = require('../repository/usersRepository'); 
 const googleRepository = require('../repository/googleRepository.js');
 const oauth2Client = new google.auth.OAuth2(
@@ -255,9 +256,7 @@ class AuthController {
         console.log(`📱 Desconectando dispositivo WhatsApp...`);
         const deviceId = `device-${profile.whatsapp_number?.replace(/\D/g, '')}`;
         
-        // Importar o multi-device-manager dinamicamente
-        const WhatsAppDeviceManager = require('../services/multi-device-manager');
-        const multiDeviceManager = new WhatsAppDeviceManager();
+      
         await multiDeviceManager.disconnectDevice(deviceId);
         console.log(`✅ Dispositivo WhatsApp desconectado`);
       } catch (deviceError) {
