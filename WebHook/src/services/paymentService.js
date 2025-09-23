@@ -102,8 +102,21 @@ class PaymentService {
     }
   }
 
- 
- 
+  async createOnboardingLink(stripeAccountId) {
+    try {
+      console.log(`🔗 [ONBOARDING] Criando link para conta: ${stripeAccountId}`);
+      
+      const loginLink = await stripe.accounts.createLoginLink(stripeAccountId);
+
+      console.log(`✅ [DASHBOARD] Link de login criado: ${loginLink.url}`);
+      return loginLink.url;
+      
+    } catch (error) {
+      console.error(`❌ [ONBOARDING] Erro ao criar link:`, error);
+      throw new Error(`Falha ao criar link de onboarding: ${error.message}`);
+    }
+  }
+
 }
 
 module.exports = new PaymentService();

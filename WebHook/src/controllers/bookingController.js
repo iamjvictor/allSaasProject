@@ -47,8 +47,19 @@ class BookingController{
             console.log("Perfil do dono do hotel:", hotelOwnerProfile);
             const hotelOwnerEmail = hotelOwnerProfile.email;
             const hotelOwnerName = hotelOwnerProfile.full_name;
+            const leadWhatsappNumber = lead_whatsapp_number;    
+           // 2. Gera um novo link de onboarding para ele corrigir o problema
+            let onboardingLink = null;
+            if (hotelOwnerProfile.stripe_id) {
+              try {
+                onboardingLink = await paymentService.createOnboardingLink(hotelOwnerProfile.stripe_id);
+              } catch (onboardingError) {
+                console.error(`❌ [ONBOARDING] Erro ao criar link:`, onboardingError);
+              }
+            }
+
             const errorDetails = checkoutError.message;
-            await emailService.sendStripeErrorNotification(hotelOwnerEmail, hotelOwnerName, errorDetails);
+            await emailService.sendStripeErrorNotification(hotelOwnerEmail, onboardingLink, hotelOwnerName, errorDetails, leadWhatsappNumber);
             console.error("❌ [ERRO CHECKOUT] Erro ao criar checkout:", checkoutError);
             
             // Cancelar o agendamento criado em caso de erro no checkout
@@ -219,17 +230,27 @@ class BookingController{
     // 3. Monta o relatório final
     const report = allRoomTypes.map(roomType => {
       const occupiedCount = bookingCounts.get(roomType.id) || 0;
-      const availableCount = roomType.total_quantity - occupiedCount;
+      let availableCount;
       
-      console.log(`🔍 [DEBUG] Room ${roomType.id} (${roomType.name}): total=${roomType.total_quantity}, occupied=${occupiedCount}, available=${availableCount}`);
+      if (roomType.privacy === 'compartilhado') {
+        // Para quartos compartilhados: occupiedCount = vagas ocupadas
+        const totalSpots = roomType.total_quantity * roomType.capacity; // Total de vagas
+        const occupiedSpots = occupiedCount; // Vagas ocupadas (já vem do banco)
+        availableCount = totalSpots - occupiedSpots; // Vagas disponíveis
+        console.log(`🔍 [DEBUG] Quarto Compartilhado ${roomType.id} (${roomType.name}): total_vagas=${totalSpots}, ocupadas=${occupiedSpots}, disponíveis=${availableCount}`);
+      } else {
+        // Para quartos privativos: occupiedCount = quartos ocupados
+        availableCount = roomType.total_quantity - occupiedCount; // Quartos disponíveis
+        console.log(`🔍 [DEBUG] Quarto Privativo ${roomType.id} (${roomType.name}): total=${roomType.total_quantity}, ocupados=${occupiedCount}, disponíveis=${availableCount}`);
+      }
       
       return {
         id: roomType.id,
         name: roomType.name,  
         isAvailable: availableCount > 0,
-        availableCount: availableCount,
+        availableCount: availableCount, // Vagas para compartilhado, quartos para privativo
         dailyRate: roomType.daily_rate,
-        description: roomType.description, // Adicionando a descrição
+        
       };
     });
     console.log("🔍 [DEBUG] Relatório final:", report)
@@ -237,6 +258,14 @@ class BookingController{
       } catch (err) {
       console.error("❌ [ERROR] Erro no getAvailabilityReport:", err);
       res.status(500).json({ message: err.message || "Erro interno do servidor." });
+    }
+    async callHumanAgent(req, res) {
+      const { hotel_id, lead_whatsapp_number } = req.body;
+      console.log("whaatpp", lead_whatsapp_number)
+      const profile = await usersRepository.getProfile(hotel_id);
+      const response = await emailService.sendCallHumanAgentEmail(profile.email, profile.full_name, lead_whatsapp_number);
+      console.log("🔍 [DEBUG] Email de atendimento humano enviado com sucesso!");
+      res.status(200).json({ message: "Email de atendimento humano enviado com sucesso!" });
     }
 }
   

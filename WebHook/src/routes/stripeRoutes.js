@@ -35,6 +35,12 @@ router.post(
   StripeController.cancelSubscription
 );
 
+router.post(
+  '/create-portal-session', // O URL que o seu frontend irá chamar
+  express.json(), // Garante que só utilizadores autenticados podem aceder
+  StripeController.createPortalSession         // A função do seu controller que será executada
+);
+
 
 router.get(
   '/balance', 

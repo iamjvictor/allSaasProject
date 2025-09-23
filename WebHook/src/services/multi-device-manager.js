@@ -354,10 +354,12 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
     const configPath = path.join(deviceSessionDir, 'device_config.json');
     const credsPath = path.join(deviceSessionDir, 'creds.json');
 
-    if (!fsSync.existsSync(credsPath) || !fsSync.existsSync(configPath)) {
-      console.error(`[ERROR] [${deviceId}] Sessão inválida. Faltam arquivos de credenciais.`);
-      throw new Error(`Sessão inválida para ${whatsappNumber}.`);
+    // Verificar se a pasta de sessão existe
+    if (!fsSync.existsSync(deviceSessionDir)) {
+      console.log(`[INFO] [${deviceId}] Pasta de sessão não existe. Criando nova sessão...`);
+      fsSync.mkdirSync(deviceSessionDir, { recursive: true });
     }
+
 
     let deviceConfig;
 
@@ -398,7 +400,7 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
     await fs.rm(sessionDir, { recursive: true, force: true }).catch(() => {});
     this.devices.delete(deviceId);
   }
-
+ 
   _setupEventListeners(sock, deviceConfig, saveCreds) {
     const deviceId = `device-${deviceConfig.whatsappNumber}`;  
     let qrTimeout = null;

@@ -1,6 +1,26 @@
 const RoomRepository = require('../repository/roomRepository');
 const supabase = require('../clients/supabase-client');
 
+// Função para invalidar cache do conhecimento da IA
+async function invalidateKnowledgeCache(userId) {
+  try {
+    const response = await fetch(`${process.env.API_SAAS_URL}/invalidate-cache/${userId}`, {
+      method: 'POST',
+      headers: {
+        'x-api-key': process.env.API_SECRET_KEY
+      }
+    });
+    
+    if (response.ok) {
+      console.log(`✅ [CACHE] Cache invalidado para usuário ${userId}`);
+    } else {
+      console.log(`⚠️ [CACHE] Falha ao invalidar cache para usuário ${userId}`);
+    }
+  } catch (error) {
+    console.error(`❌ [CACHE] Erro ao invalidar cache:`, error);
+  }
+}
+
 class RoomController {
   async createRooms(req, res) {
     try {
@@ -13,6 +33,9 @@ class RoomController {
       const roomTypesData = req.body; // O array de quartos
       
       const newRooms = await RoomRepository.createMany(user.id, roomTypesData);
+
+      // Invalidar cache do conhecimento da IA
+      await invalidateKnowledgeCache(user.id);
 
       res.status(201).json({ message: "Quartos cadastrados com sucesso!", data: newRooms });
 
@@ -80,6 +103,10 @@ class RoomController {
       // 4. Execução
       // Se chegamos até aqui, o usuário é o dono legítimo. Podemos prosseguir com a atualização.
       const updatedRoom = await RoomRepository.update(roomId, roomData);
+      
+      // Invalidar cache do conhecimento da IA
+      await invalidateKnowledgeCache(user.id);
+      
       res.status(200).json({ message: "Quarto atualizado com sucesso!", data: updatedRoom });
 
     } catch (err) {
@@ -103,6 +130,9 @@ class RoomController {
       
 
       const deletedRoom = await RoomRepository.deleteById(roomId, user.id);
+      
+      // Invalidar cache do conhecimento da IA
+      await invalidateKnowledgeCache(user.id);
       
       // Um status 204 (No Content) também é comum para deleções bem-sucedidas.
       res.status(200).json({ message: "Quarto deletado com sucesso!", data: deletedRoom });

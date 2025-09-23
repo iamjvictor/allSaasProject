@@ -134,7 +134,7 @@ class BookingRepository {
     console.log(`Verificando disponibilidade do quarto...`, roomTypeId, checkInDate, checkOutDate);
     const { data: roomType, error: roomError } = await supabase
       .from('room_types')
-      .select('total_quantity')
+      .select('total_quantity, privacy, capacity')
       .eq('id', roomTypeId)
       .single();
 
@@ -143,7 +143,12 @@ class BookingRepository {
       if (roomError.code === 'PGRST116') return 0;
       throw new Error("Tipo de quarto não encontrado para verificação.");
     }
+    
     const stockTotal = roomType.total_quantity;
+    const privacy = roomType.privacy;
+    const capacity = roomType.capacity;
+    
+    console.log(`🔍 [CHECK AVAILABILITY] Quarto ${roomTypeId}: total_quantity=${stockTotal}, privacy=${privacy}, capacity=${capacity}`);
     console.log(`checando reservas existentes...`);
     let query = supabase
       .from('bookings')
@@ -167,12 +172,26 @@ class BookingRepository {
     const quartosOcupados = count || 0;
     console.log(`Quartos ocupados para ${roomTypeId} entre ${checkInDate} e ${checkOutDate}: ${quartosOcupados}`);
     
-    // 3. O cálculo final
-    const quartosDisponiveis = stockTotal - quartosOcupados;
-
-    console.log(`Disponibilidade para quarto ${roomTypeId} [${checkInDate} a ${checkOutDate}]: ${quartosDisponiveis} de ${stockTotal}`);
+    // 3. O cálculo final - diferente para quartos compartilhados
+    let disponibilidade;
     
-    return quartosDisponiveis > 0 ? quartosDisponiveis : 0;
+    if (privacy === 'compartilhado') {
+      // Para quartos compartilhados: count = vagas ocupadas
+      const totalSpots = stockTotal * capacity; // Total de vagas
+      const occupiedSpots = quartosOcupados; // Vagas ocupadas
+      disponibilidade = totalSpots - occupiedSpots; // Vagas disponíveis
+      
+      console.log(`🔍 [QUARTO COMPARTILHADO] ${roomTypeId}: total_vagas=${totalSpots}, ocupadas=${occupiedSpots}, disponíveis=${disponibilidade}`);
+    } else {
+      // Para quartos privativos: count = quartos ocupados
+      disponibilidade = stockTotal - quartosOcupados; // Quartos disponíveis
+      
+      console.log(`🔍 [QUARTO PRIVATIVO] ${roomTypeId}: total_quartos=${stockTotal}, ocupados=${quartosOcupados}, disponíveis=${disponibilidade}`);
+    }
+
+    console.log(`Disponibilidade para quarto ${roomTypeId} [${checkInDate} a ${checkOutDate}]: ${disponibilidade}`);
+    
+    return disponibilidade > 0 ? disponibilidade : 0;
   }
 
   async filterExistingGoogleEvents(userId, googleEventIds) {

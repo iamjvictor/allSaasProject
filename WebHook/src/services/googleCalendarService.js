@@ -153,10 +153,13 @@ class GoogleCalendarService {
 
       // 3. AGORA, criamos o novo 'watch'
     try {
+      // Gerar um channelId único baseado no userId + timestamp
+      const uniqueChannelId = `${userId}-${Date.now()}`;
+      
       const response = await calendar.events.watch({
         calendarId: 'primary',
         requestBody: {
-          id: userId,  // O ID único para este canal (nosso userId)
+          id: uniqueChannelId,  // ID único para evitar conflitos
           type: 'web_hook',
           address: `${process.env.API_BASE_URL}/api/integrations/google/webhook`, // A URL do seu webhook
         },
@@ -166,7 +169,9 @@ class GoogleCalendarService {
       console.log("Monitoramento do calendário iniciado/renovado:", response.data);
 
       // 4. SALVAMOS os novos IDs no banco para podermos pará-lo no futuro
-      await googleRepository.updateWatchInfo(userId, resourceId, expiration); // Você precisará criar esta função
+      console.log(`💾 Salvando watch info - userId: ${userId}, resourceId: ${resourceId}`);
+      await googleRepository.updateWatchInfo(userId, resourceId, expiration);
+      console.log(`✅ Watch info salvo com sucesso`);
 
       return response.data;
 
@@ -262,7 +267,7 @@ class GoogleCalendarService {
       
       await calendar.channels.stop({
         requestBody: {
-          id: integration.user_id, // O 'channelId' que usamos
+          id: integration.user_id, // Usar userId como channelId
           resourceId: watchResourceId, // O 'resourceId' que salvamos
         }
       });

@@ -83,7 +83,7 @@ async deleteGoogleTokens(userId) {
       .single();
     
     if (error && error.code !== 'PGRST116') throw error;
-    return { data, error };
+    return data;
   }
 }
 

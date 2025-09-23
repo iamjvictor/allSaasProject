@@ -1,4 +1,6 @@
 // src/api/controllers/stripe.controller.js
+const googleCalendarService = require('../services/googleCalendarService');
+const googleRepository = require('../repository/googleRepository');
 
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 // This is your test secret API key.
@@ -10,6 +12,8 @@ const BookingController = require('./bookingController');
 const bookingController = new BookingController();
 const supabase = require('../clients/supabase-client');
 const deviceManager = require('../services/multi-device-manager');
+const emailService = require('../services/emailService');
+const usersRepository = require('../repository/usersRepository');
 
 
 // Pegue o "Segredo do endpoint" que a Stripe te deu e coloque no seu .env
@@ -27,7 +31,7 @@ class StripeController {
       // Confirma se a notificação veio mesmo da Stripe, usando o segredo.
       // É por isso que precisamos do 'req.body' bruto (raw).
       event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
-      
+     
 
     } catch (err) {
       console.error(`❌ Erro na verificação da assinatura do webhook: ${err.message}`);
@@ -145,16 +149,26 @@ class StripeController {
         console.error(`❌ Erro ao processar customer.subscription.created:`, error);
         return res.status(200).send('OK (Erro interno)');
       }
+    }else if (event.type === 'customer.subscription.updated') {
+      const object = event.data.object;
+      const subscriptionId = object.id;
+      console.log('escutando o updated');
+
+      if (object.cancel_at_period_end) {
+        console.log(`🗑️ Subscription cancelada para customer: ${subscriptionId}`);
+        await this.handleSubscriptionCancelation(object.metadata.UserId, object.cancel_at);
+        return res.status(200).send('OK (Subscription cancelada)');
+      }
     }else if (event.type === 'customer.updated') {
-      const customer = event.data.object;
-      const customerId = customer.id;
+      const object = event.data.object;
+      const customerId = object.id;
 
       const subscriptions = await stripe.subscriptions.list({
         customer: customerId,
         
         limit: 1
       });
-      console.log('subscriptions', subscriptions);
+     
 
     
       if (subscriptions.data.length === 0) {
@@ -164,7 +178,7 @@ class StripeController {
 
       const subscription = subscriptions.data[0];
       const priceId = subscription.items.data[0].price.id;
-      console.log('subscriptionList', subscription);
+     
 
       // Buscar o invoice para pegar o start_date
       
@@ -174,7 +188,7 @@ class StripeController {
         // Buscar o usuário pelo customer_id do Stripe
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('id, stripe_customer_id, whatsapp_number')
+          .select('*')
           .eq('stripe_customer_id', customerId)
           .single();
 
@@ -232,66 +246,71 @@ class StripeController {
           console.log(`⚠️ Subscription com status '${subscription.status}' para usuário ${profile.id} - Desconectando dispositivo Baileys`);
           
           try {
-            // Importar o device manager
-          
+            // Usar a função centralizada de desconexão
+            const result = await this.disconnectDevice(profile);
             
-            // Buscar o phone_number do perfil para identificar o dispositivo
-            if (profile.whatsapp_number) {
-              // Remover o código do país (+55) se presente
-              const cleanPhone = profile.whatsapp_number.replace(/^\+55/, '');
-              const deviceId = cleanPhone;
-              
-              console.log(`🔌 Desconectando dispositivo: ${deviceId}`);
-              
-              // Desconectar o dispositivo
-              await deviceManager.disconnectDevice(deviceId);
-              // Apagar a pasta de sessão do dispositivo Baileys para evitar religação após reinício do servidor
-              const fs = require('fs');
-              const path = require('path');
-              // O diretório das sessões Baileys (ajuste conforme sua estrutura)
-              const sessionsDir = path.join(__dirname, '..', '.sessions');
-              const sessionFolder = path.join(sessionsDir, profile.whatsapp_number);
-
-              if (fs.existsSync(sessionFolder)) {
-                try {
-                  fs.rmSync(sessionFolder, { recursive: true, force: true });
-                  console.log(`🗑️ Pasta de sessão ${sessionFolder} removida com sucesso`);
-                } catch (fsErr) {
-                  console.error(`❌ Erro ao remover pasta de sessão ${sessionFolder}:`, fsErr);
-                }
-              } else {
-                console.log(`ℹ️ Pasta de sessão ${sessionFolder} não encontrada (já removida ou nunca criada)`);
-              }
-              
-              console.log(`✅ Dispositivo ${deviceId} desconectado com sucesso`);
-            } else {
-              console.log(`⚠️ Phone number não encontrado para o perfil ${profile.id}`);
+            if (!result.success) {
+              console.log(`⚠️ Falha ao desconectar dispositivo: ${result.message || result.error}`);
             }
           } catch (deviceError) {
             console.error(`❌ Erro ao desconectar dispositivo:`, deviceError);
             // Não falha o webhook por causa do erro de dispositivo
           }
+
+          // Se for past_due, enviar email com link do portal
+          if (subscription.status === 'past_due') {
+            console.log(`📧 Enviando email de atraso com link do portal para usuário ${profile.id}`);
+            const fullProfile = await usersRepository.getProfile(profile.id);
+            try {
+              // Gerar link do portal
+              const portalSession = await stripe.billingPortal.sessions.create({
+                customer: customerId,
+                return_url: `${process.env.FRONTEND_URL}/dashboard`,
+              });
+
+              // Enviar email de aviso de pagamento em atraso com link
+              await emailService.sendPaymentOverdueNotification(
+                fullProfile.email, 
+                fullProfile.full_name || fullProfile.email,
+                {
+                  customerId,
+                  currentPeriodEndsAt,
+                  overdueDate: new Date().toISOString(),
+                  portalUrl: portalSession.url
+                }
+              );
+              console.log(`✅ Email de aviso de atraso com link enviado para ${fullProfile.email}`);
+            } catch (emailError) {
+              console.error(`❌ Erro ao enviar email de atraso:`, emailError);
+              // Não falha o processo por erro de email
+            }
+          }
         }
 
-        // Se status voltou para um status permitido, reconectar dispositivo
+        // Se status voltou para um status permitido, verificar se precisa reconectar
         if (!shouldDisconnect) {
-          console.log(`✅ Subscription com status '${subscription.status}' para usuário ${profile.id} - Reconectando dispositivo Baileys`);
+          console.log(`✅ Subscription com status '${subscription.status}' para usuário ${profile.id} - Verificando conexão WhatsApp`);
           
           try {
-            
-            
             // Buscar o phone_number do perfil para identificar o dispositivo
             if (profile.whatsapp_number) {
-              // Remover o código do país (+55) se presente
-              const cleanPhone = profile.whatsapp_number.replace(/^\+55/, '');
-              const deviceId = cleanPhone;
+              const whatsappNumber = profile.whatsapp_number;
+              const deviceId = whatsappNumber.replace(/^\+55/, ''); // Para logs
+              const fullDeviceId = `device-${deviceId}`;
               
-              console.log(`🔌 Reconectando dispositivo: ${deviceId}`);
+              // Verificar se o dispositivo já está conectado
+              const isAlreadyConnected = deviceManager.devices.has(fullDeviceId);
               
-              // Reconectar o dispositivo
-              await deviceManager.reconnectDevice(deviceId);
-              
-              console.log(`✅ Dispositivo ${deviceId} reconectado com sucesso`);
+              if (isAlreadyConnected) {
+                console.log(`ℹ️ Dispositivo ${deviceId} já está conectado. Pulando reconexão.`);
+              } else {
+                console.log(`🔌 Dispositivo ${deviceId} não está conectado. Iniciando reconexão...`);
+                
+                // Reconectar o dispositivo passando o número completo
+                await deviceManager.reconnectDevice(whatsappNumber);
+                
+                console.log(`✅ Dispositivo ${deviceId} reconectado com sucesso`);
+              }
             } else {
               console.log(`⚠️ Phone number não encontrado para o perfil ${profile.id}`);
             }
@@ -308,14 +327,11 @@ class StripeController {
     }else if (event.type === 'customer.subscription.deleted') {
       const subscription = event.data.object;
       const customerId = subscription.customer;
-      
-      console.log(`🗑️ Subscription cancelada para customer: ${customerId}`);
-
       try {
         // Buscar o usuário pelo customer_id do Stripe
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
-          .select('id, stripe_customer_id')
+          .select('*')
           .eq('stripe_customer_id', customerId)
           .single();
 
@@ -323,8 +339,7 @@ class StripeController {
           console.error(`❌ Perfil não encontrado para customer ${customerId}:`, profileError);
           return res.status(200).send('OK (Perfil não encontrado)');
         }
-
-        // Validar e converter current_period_end
+       
         let currentPeriodEndsAt = null;
         if (subscription.current_period_end && typeof subscription.current_period_end === 'number') {
           const date = new Date(subscription.current_period_end * 1000);
@@ -332,6 +347,33 @@ class StripeController {
             currentPeriodEndsAt = date.toISOString();
           }
         }
+
+        try {
+          // Usar a função centralizada de desconexão
+          const result = await this.disconnectDevice(profile);
+          
+          if (!result.success) {
+            console.log(`⚠️ Falha ao desconectar dispositivo: ${result.message || result.error}`);
+          }
+        } catch (deviceError) {
+          console.error(`❌ Erro ao desconectar dispositivo:`, deviceError);
+          // Não falha o webhook por causa do erro de dispositivo
+        }
+        if (!profile.whatsapp_number) {
+          console.log(`⚠️ WhatsApp number não encontrado para o perfil ${profile.id}`);
+          return { success: false, message: 'WhatsApp number não encontrado' };
+        }
+        const fullProfile = await usersRepository.getProfile(profile.id);
+  
+        // Enviar email de notificação de cancelamento
+        try {
+          await emailService.sendSubscriptionCancellationNotification(fullProfile.email, fullProfile.full_name, new Date().toISOString());
+          console.log(`✅ Email de cancelamento enviado para ${fullProfile.email}`);
+        } catch (emailError) {
+          console.error(`❌ Erro ao enviar email de cancelamento:`, emailError);
+          // Não falha o processo por erro de email
+        }
+      
 
         // Atualizar campos da tabela profile para refletir cancelamento
         const updateData = {
@@ -352,21 +394,30 @@ class StripeController {
           console.error(`❌ Erro ao atualizar perfil ${profile.id}:`, updateError);
           return res.status(200).send('OK (Erro ao atualizar perfil)');
         }
-        const fs = require('fs');
-        const path = require('path');
-        // O diretório das sessões Baileys (ajuste conforme sua estrutura)
-        const sessionsDir = path.join(__dirname, '..', '.sessions');
-        const sessionFolder = path.join(sessionsDir, profile.whatsapp_number);
-
-        if (fs.existsSync(sessionFolder)) {
-          try {
-            fs.rmSync(sessionFolder, { recursive: true, force: true });
-            console.log(`🗑️ Pasta de sessão ${sessionFolder} removida com sucesso`);
-          } catch (fsErr) {
-            console.error(`❌ Erro ao remover pasta de sessão ${sessionFolder}:`, fsErr);
+        // Remover pasta de sessão WhatsApp se existir
+        if (profile.whatsapp_number) {
+          const fs = require('fs');
+          const path = require('path');
+          // O diretório das sessões Baileys (ajuste conforme sua estrutura)
+          const sessionsDir = path.join(__dirname, '..', '.sessions');
+          const sessionFolder = path.join(sessionsDir, profile.whatsapp_number);
+              // Apagar a pasta de sessão do dispositivo Baileys para evitar religação após reinício do servidor
+     
+          if (fs.existsSync(sessionFolder)) {
+            try {
+              fs.rmSync(sessionFolder, { recursive: true, force: true });
+              console.log(`🗑️ Pasta de sessão ${sessionFolder} removida com sucesso`);
+            } catch (fsErr) {
+              console.error(`❌ Erro ao remover pasta de sessão ${sessionFolder}:`, fsErr);
+              throw fsErr;
+            }
+          } else {
+            console.log(`ℹ️ Pasta de sessão ${sessionFolder} não encontrada (já removida ou nunca criada)`);
           }
+
+          
         } else {
-          console.log(`ℹ️ Pasta de sessão ${sessionFolder} não encontrada (já removida ou nunca criada)`);
+          console.log(`ℹ️ WhatsApp number não encontrado no perfil ${profile.id}, pulando remoção de sessão`);
         }
         
 
@@ -842,6 +893,9 @@ class StripeController {
         // 2. Chama a API da Stripe para agendar o cancelamento
         await stripe.subscriptions.update(subscriptionId, {
           cancel_at_period_end: true,
+          metadata: {
+            UserId: user.id 
+          }
         });
         
         // O status da assinatura no seu DB será atualizado pelo webhook que a Stripe envia
@@ -855,6 +909,123 @@ class StripeController {
         res.status(500).json({ error: 'Falha ao processar o seu pedido de cancelamento.' });
       }
     
+  }
+  async createLoginLink(req, res) {
+    try {
+      const { stripeAccountId } = req.body;
+      const loginLink = await stripe.accounts.createLoginLink(stripeAccountId);
+      res.status(200).json({ url: loginLink.url });
+    } catch (error) {
+      console.error('Erro ao criar link de login:', error);
+      res.status(500).json({ error: 'Falha ao criar link de login.' });
+    }
+  }
+  async handleSubscriptionCancelation(customerId, cancel_at) {
+    console.log('customerId', customerId);
+    // Converte o timestamp cancel_at (em segundos) para uma data ISO string legível
+    let cancelAtDate = null;
+    if (cancel_at && typeof cancel_at === 'number') {
+      const date = new Date(cancel_at * 1000);
+      if (!isNaN(date.getTime())) {
+        cancelAtDate = date.toISOString();
+        console.log('Cancelamento agendado para:', cancelAtDate);
+      }
+    }
+     const profile = await usersRepository.getProfile(customerId);
+     console.log('profile', profile);
+     await emailService.sendSubscriptionCancellationNotification(profile.email, profile.full_name, cancelAtDate)
+     console.log('Email enviado para:', profile.email);
+  }
+  async createPortalSession(req, res) {
+    try {
+      // 1. Autenticar o usuário a partir do token JWT no cabeçalho Authorization
+      const jwt = req.headers.authorization?.split(' ')[1];
+      if (!jwt) return res.status(401).json({ message: "Não autorizado." });
+      
+      const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
+      if (authError || !user) return res.status(401).json({ message: "Token inválido." });
+
+      if (!user.id) {
+        return res.status(401).json({ error: 'Não autorizado. Token de usuário inválido ou ausente.' });
+      }
+
+      // 2. Busca o perfil do utilizador para encontrar o seu ID de cliente na Stripe
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('stripe_customer_id')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError) throw profileError;
+      
+      const customerId = profile?.stripe_customer_id;
+      if (!customerId) {
+        // Este erro pode acontecer se o utilizador nunca tentou subscrever um plano
+        return res.status(404).json({ error: 'Utilizador não encontrado no sistema de pagamentos.' });
+      }
+
+      // 3. Chama a API da Stripe para criar uma sessão do Portal de Faturação
+      const portalSession = await stripe.billingPortal.sessions.create({
+        customer: customerId,
+        // A URL para onde o utilizador será redirecionado após fechar o portal
+        return_url: `${process.env.FRONTEND_URL}/dashboard`,
+      });
+
+      // 4. Retorna a URL segura e temporária do portal para o frontend
+      res.status(200).json({ url: portalSession.url });
+      
+    } catch (error) {
+      console.error("Erro ao criar sessão do portal da Stripe:", error);
+      res.status(500).json({ error: 'Falha ao aceder à gestão da sua conta.' });
+    }
+  }    
+  async disconnectDevice(profiles) {
+    try {
+      // Buscar perfil completo do usuário
+      const profile = await usersRepository.getProfile(profiles.id);
+      
+     
+
+      // Remover o código do país (+55) se presente
+      const cleanPhone = profile.whatsapp_number.replace(/^\+55/, '');
+      const deviceId = profile.device_id;
+      
+      console.log(`🔌 Desconectando dispositivo: ${deviceId}`);
+      
+      // Desconectar o dispositivo
+      await deviceManager.disconnectDevice(deviceId);
+      
+      // Parar watch do Google Calendar e remover integração
+      try {      
+        // Buscar integração do Google para este usuário
+        const integration = await googleRepository.getGoogleTokens(profile.id);
+        
+        if (integration && integration.watch_resource_id) {
+          console.log(`📅 Parando watch do Google Calendar para usuário ${profile.id}`);
+          await googleCalendarService.stopWatch(integration.watch_resource_id);
+          
+          // Apagar integração do Google
+          console.log(`🗑️ Removendo integração do Google para usuário ${profile.id}`);
+          await googleRepository.deleteGoogleTokens(profile.id);
+          
+          console.log(`✅ Integração do Google removida com sucesso`);
+        } else {
+          console.log(`ℹ️ Nenhuma integração do Google encontrada para usuário ${profile.id}`);
+        }
+      } catch (googleError) {
+        console.error(`❌ Erro ao desconectar Google Calendar para usuário ${profile.id}:`, googleError);
+        // Não falha o processo por erro do Google
+      }
+      
+  
+      
+      console.log(`✅ Dispositivo ${deviceId} desconectado com sucesso`);
+      return { success: true, deviceId, message: 'Dispositivo desconectado com sucesso' };
+
+    } catch (error) {
+      console.error(`❌ Erro ao desconectar dispositivo para perfil ${profile.id}:`, error);
+      return { success: false, error: error.message };
+    }
   }
 }
 
