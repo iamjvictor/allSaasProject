@@ -263,7 +263,7 @@ class BookingController{
       const { hotel_id, lead_whatsapp_number } = req.body;
       console.log("whaatpp", lead_whatsapp_number)
       const profile = await usersRepository.getProfile(hotel_id);
-      const response = await emailService.sendCallHumanAgentEmail(profile.email, profile.full_name, lead_whatsapp_number);
+      const response = await emailService.sendCallHumanAgentEmail(profile.email, profile.full_name, lead_whatsapp_number);     
       console.log("🔍 [DEBUG] Email de atendimento humano enviado com sucesso!");
       res.status(200).json({ message: "Email de atendimento humano enviado com sucesso!" });
     }
