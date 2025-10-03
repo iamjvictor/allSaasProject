@@ -29,18 +29,35 @@ class PaymentService {
       // Verificar se a conta conectada tem as capacidades necessárias
       const account = await stripe.accounts.retrieve(hotelOwnerStripeAccountId);
       
+      console.log('🔍 [PAYMENT SERVICE] Status da conta Stripe:');
+      console.log(`   - Account ID: ${account.id}`);
+      console.log(`   - charges_enabled: ${account.charges_enabled}`);
+      console.log(`   - transfers_enabled: ${account.transfers}`);
+      console.log(`   - payouts_enabled: ${account.payouts_enabled}`);
+      console.log(`   - capabilities:`, account.capabilities);
+      console.log(`   - details_submitted: ${account.details_submitted}`);
+      console.log(`   - requirements:`, account.requirements);
+      
       if (!account.charges_enabled) {
+        console.log('❌ [PAYMENT SERVICE] charges_enabled é false');
         throw new Error("A conta Stripe do dono do hotel não está habilitada para receber pagamentos. Complete o onboarding primeiro.");
       }
       
-      if (!account.transfers_enabled) {
+      // Verificar se as capacidades estão ativas (método mais confiável)
+      if (account.capabilities?.transfers !== 'active' || account.capabilities?.card_payments !== 'active') {
+        console.log('❌ [PAYMENT SERVICE] Capacidades não estão ativas:');
+        console.log(`   - transfers: ${account.capabilities?.transfers}`);
+        console.log(`   - card_payments: ${account.capabilities?.card_payments}`);
+        throw new Error("A conta Stripe do dono do hotel não possui as capacidades necessárias ativas. Complete o onboarding primeiro.");
+      }
+      
+      // Verificar se transfers_enabled existe e é true (para compatibilidade)
+      if (account.transfers_enabled !== undefined && !account.transfers_enabled) {
+        console.log('❌ [PAYMENT SERVICE] transfers_enabled é false');
         throw new Error("A conta Stripe do dono do hotel não está habilitada para transferências. Complete o onboarding primeiro.");
       }
       
-      // Verificar se as capacidades estão ativas
-      if (account.capabilities?.transfers !== 'active' || account.capabilities?.card_payments !== 'active') {
-        throw new Error("A conta Stripe do dono do hotel não possui as capacidades necessárias ativas. Complete o onboarding primeiro.");
-      }
+      console.log('✅ [PAYMENT SERVICE] Conta Stripe está pronta para receber pagamentos');
 
       // 2. Calcular o preço total em centavos
       const calculatedTotalPriceCents = Math.round(booking.totalPrice * 100);

@@ -339,6 +339,52 @@ class BookingRepository {
     console.log(`Reserva ${bookingId} cancelada com sucesso`);
     return data;
   }
+  async cancelBookingByGoogleEvent(googleEventId) {
+    console.log(`🔍 Buscando reserva com googleEventId: ${googleEventId}`);
+    
+    // Primeiro, vamos verificar se existe uma reserva com esse googleEventId
+    const { data: existingBooking, error: findError } = await supabase
+      .from('bookings')
+      .select('id, status, google_calendar_event_id')
+      .eq('google_calendar_event_id', googleEventId)
+      .maybeSingle();
+
+    console.log(`🔍 Resultado da busca:`, { existingBooking, findError });
+
+    if (findError) {
+      console.error(`Erro ao buscar reserva por googleEventId: ${googleEventId}:`, findError);
+      throw new Error(`Falha ao buscar reserva por googleEventId: ${googleEventId}: ${findError.message}`);
+    }
+
+    if (!existingBooking) {
+      console.log(`Nenhuma reserva encontrada com googleEventId: ${googleEventId}. Pode ser um evento criado manualmente.`);
+      return null; // Não é um erro, apenas não há reserva para cancelar
+    }
+
+    console.log(`Reserva encontrada:`, existingBooking);
+
+    // Se a reserva já está cancelada, não precisa fazer nada
+    if (existingBooking.status === 'cancelada') {
+      console.log(`Reserva ${existingBooking.id} já está cancelada.`);
+      return existingBooking;
+    }
+
+    // Atualiza o status para cancelada
+    const { data, error } = await supabase
+      .from('bookings')
+      .update({ status: 'cancelada' })
+      .eq('google_calendar_event_id', googleEventId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error(`Erro ao cancelar reserva por googleEventId: ${googleEventId}:`, error);
+      throw new Error(`Falha ao cancelar reserva por googleEventId: ${googleEventId}: ${error.message}`);
+    }
+
+    console.log(`Reserva cancelada com sucesso por googleEventId: ${googleEventId}`);
+    return data;
+  }
 
   // Deleta uma reserva específica
   async deleteBooking(bookingId) {

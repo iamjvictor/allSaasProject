@@ -14,6 +14,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 class WhatsAppDeviceManager {
   constructor() {
+    console.log(`🔍 [CONSTRUCTOR] Criando nova instância do WhatsAppDeviceManager`);
     this.devices = new Map();
     this.deviceConfigs = [];
     this.chatHistory = new Map();
@@ -23,6 +24,7 @@ class WhatsAppDeviceManager {
     if (!fsSync.existsSync(this.sessionsDir)) {  // Use fsSync instead of fs
       fsSync.mkdirSync(this.sessionsDir, { recursive: true });
     }
+    console.log(`🔍 [CONSTRUCTOR] Instância criada com ID: ${this.constructor.name}-${Date.now()}`);
   }
 
   // Função para extrair o número do WhatsApp do JID
@@ -556,17 +558,53 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
 
   async sendMessageToDevice(deviceId, to, message) {
     const device = this.devices.get(deviceId);
+    console.log(`🔍 [DEBUG] device: ${device}`);
+    console.log(`🔍 [DEBUG] deviceId: ${deviceId}`);
+    console.log(`🔍 [DEBUG] to: ${to}`);
+    console.log(`🔍 [DEBUG] message: ${message}`);
+    
+    // Debug: Mostrar todos os dispositivos no Map
+    console.log(`🔍 [DEBUG] Total de dispositivos no Map: ${this.devices.size}`);
+    console.log(`🔍 [DEBUG] Chaves disponíveis:`, Array.from(this.devices.keys()));
+    console.log(`🔍 [DEBUG] Dispositivos completos:`, Array.from(this.devices.entries()).map(([key, dev]) => ({
+      key,
+      name: dev.config?.name,
+      connected: dev.connected,
+      whatsappNumber: dev.whatsappNumber
+    })));
+    
     if (device && device.connected) {
       try {
+        console.log(`🔍 [DEBUG] Tentando enviar mensagem...`);
+        console.log(`🔍 [DEBUG] device.sock: ${device.sock}`);
+        console.log(`🔍 [DEBUG] device.sock.user: ${device.sock.user}`);
+        
+        // Verificar se o socket está realmente pronto para enviar mensagens
+        if (!device.sock.user || !device.sock.user.id) {
+          console.error(`❌ Socket não está pronto - user.id está undefined`);
+          console.error(`❌ device.sock.user:`, device.sock.user);
+          return false;
+        }
+        
+        // Verificar se o número de destino está no formato correto
+        if (!to.includes('@')) {
+          console.error(`❌ Número de destino inválido: ${to} - deve incluir @s.whatsapp.net`);
+          return false;
+        }
+        
+        console.log(`🔍 [DEBUG] Enviando para: ${to}`);
         await device.sock.sendMessage(to, { text: message });
         console.log(`📤 Mensagem enviada via ${device.config.name}`);
         return true;
       } catch (error) {
         console.error(`❌ Erro ao enviar mensagem via ${device.config.name}:`, error.message);
+        console.error(`❌ Stack trace:`, error.stack);
         return false;
       }
     } else {
       console.error(`❌ Dispositivo ${deviceId} não encontrado ou desconectado`);
+      console.error(`❌ Device exists: ${!!device}`);
+      console.error(`❌ Device connected: ${device?.connected}`);
       return false;
     }
   }

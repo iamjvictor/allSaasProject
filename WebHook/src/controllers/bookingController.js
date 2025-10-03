@@ -7,7 +7,7 @@ const paymentService = require('../services/paymentService');
 const paymentRepository = require('../repository/paymentRepository');
 const usersRepository = require('../repository/usersRepository');
 const emailService = require('../services/emailService');
-
+const DeviceController = require('../controllers/deviceController');
 class BookingController{
 
     async createBookingWithPaymentLink(req, res) {
@@ -130,9 +130,18 @@ class BookingController{
                     `Preparamos tudo para a sua chegada. Mal podemos esperar para te receber!`;
 
     // 5. Chame a função do seu deviceController
-        console.log(`Enviando mensagem do device [${deviceId}] para [${eventDetails.lead_whatsapp}] com o texto: ${message}`);
+
         const profile = await usersRepository.getProfile(pendingBooking.user_id);
-        await deviceController.sendMessage(profile.deviceId, eventDetails.lead_whatsapp, message);
+        
+        // Formatar o número do WhatsApp corretamente
+        let whatsappNumber = eventDetails.lead_whatsapp;
+        if (!whatsappNumber.includes('@')) {
+            whatsappNumber = `${whatsappNumber}@s.whatsapp.net`;
+        }
+        
+        console.log(`Enviando mensagem do device [${profile.device_id}] para [${whatsappNumber}] com o texto: ${message}`);
+        
+        await DeviceController.sendMessage(profile.device_id, whatsappNumber, message);
         
 
       

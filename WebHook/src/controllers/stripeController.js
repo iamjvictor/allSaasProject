@@ -542,6 +542,15 @@ class StripeController {
       if (needsTransfers || needsCardPayments) {
         console.log('Atualizando capacidades da conta...');
         
+        // Verificar se a conta está pronta para ter as capacidades ativadas
+        if (!account.charges_enabled || !account.transfers_enabled) {
+          console.log('⚠️ A conta ainda não está pronta para ativar capacidades. Status:');
+          console.log(`- charges_enabled: ${account.charges_enabled}`);
+          console.log(`- transfers_enabled: ${account.transfers_enabled}`);
+          console.log('💡 O usuário precisa completar o onboarding primeiro.');
+          return account;
+        }
+        
         // Atualizar capacidades da conta
         const updatedAccount = await stripe.accounts.update(accountId, {
           capabilities: {
@@ -552,6 +561,8 @@ class StripeController {
 
         console.log('Capacidades atualizadas:', updatedAccount.capabilities);
         return updatedAccount;
+      } else {
+        console.log('✅ Todas as capacidades já estão ativas!');
       }
 
       return account;

@@ -6,10 +6,8 @@ const bcrypt = require('bcryptjs'); // Importe a biblioteca de hash
 const qrcodeTerminal = require('qrcode-terminal');
 const qr = require('qr-image'); // Add this at the top of your file with other requires
 const fs = require('fs');
-const DeviceController = require('./src/controllers/deviceController');
-
-// Criar uma instância única do controller usando a instância singleton
-const deviceController = new DeviceController(deviceManager);
+// Usar a instância singleton do controller
+const deviceController = require('./src/controllers/deviceController');
 
 // Limpar conexões órfãs na inicialização
 deviceManager.cleanupOrphanedConnections().catch(err => {

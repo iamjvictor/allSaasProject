@@ -94,8 +94,27 @@ class AuthController {
 
         // AGORA SIM, ELE VAI ENTRAR NO TRY!
         try {
-          console.log("code:",code);
+         
             // 1. Trocar o código por tokens
+            // Usar a URL baseada no ambiente
+            const redirectUri = process.env.NODE_ENV === 'production' 
+                ? 'https://api.autobooks.com.br/api/auth/google/callback'
+                : 'http://localhost:4000/api/auth/google/callback';
+            
+            console.log('🔍 [GOOGLE AUTH] Parâmetros da requisição:');
+            console.log(`   - NODE_ENV: ${process.env.NODE_ENV}`);
+            console.log(`   - code: ${code}`);
+            console.log(`   - client_id: ${process.env.GOOGLE_CLIENT_ID}`);
+            console.log(`   - client_secret: ${process.env.GOOGLE_CLIENT_SECRET ? '***' : 'UNDEFINED'}`);
+            console.log(`   - redirect_uri: ${redirectUri}`);
+            console.log(`   - grant_type: authorization_code`);
+            console.log(`   - GOOGLE_REDIRECT_URI env: ${process.env.GOOGLE_REDIRECT_URI}`);
+            
+            // Verificar se o código não foi usado antes
+            if (!code || code.length < 10) {
+                throw new Error('Código de autorização inválido ou vazio');
+            }
+            
             const response = await fetch('https://oauth2.googleapis.com/token', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -103,22 +122,24 @@ class AuthController {
                     code,
                     client_id: process.env.GOOGLE_CLIENT_ID,
                     client_secret: process.env.GOOGLE_CLIENT_SECRET,
-                    redirect_uri: `http://localhost:4000/api/auth/google/callback`,
+                    redirect_uri: redirectUri,
                     grant_type: 'authorization_code',
                 }),
             });
 
+            console.log(`🔍 [GOOGLE AUTH] Status da resposta: ${response.status}`);
             const tokens = await response.json();
-            console.log("Tokens recebidos do Google:", tokens);
+            console.log('🔍 [GOOGLE AUTH] Resposta do Google:', tokens);
 
             if (tokens.error) {
                 // Adiciona um log mais detalhado do erro do Google
                 console.error("Erro do Google ao trocar token:", tokens.error_description);
+                console.error("Código do erro:", tokens.error);
                 throw new Error(tokens.error_description || 'Erro ao obter tokens do Google.');
             }
 
             const { access_token, refresh_token, expires_in } = tokens;
-            console.log("refresh_token:", refresh_token);
+           
 
             // Instancie seu repositório para usar os métodos
             // --- ETAPA 2: Buscar o Perfil do Google (A PARTE NOVA) ---

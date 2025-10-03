@@ -1,9 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const DeviceController = require('../controllers/deviceController');
 
-// Instancie o controller (já usa a instância singleton internamente)
-const deviceController = new DeviceController();
+// Usar a instância singleton do controller
+const deviceController = require('../controllers/deviceController');
 
 // Use bind para garantir o contexto correto do this
 router.post('/connect', deviceController.connectDeviceAndReturnQr.bind(deviceController));

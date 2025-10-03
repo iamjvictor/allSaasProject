@@ -272,4 +272,4 @@ if (require.main === module) {
   main().catch(console.error);
 }
 
-module.exports = DeviceController;
+module.exports = new DeviceController();

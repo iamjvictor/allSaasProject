@@ -89,6 +89,8 @@ class GoogleCalendarService {
         **Valor Total:** R$ ${eventDetails.total_price}
         --------------------------------
         ID da Reserva no Sistema: ${eventDetails.booking_id}
+        --------------------------------
+        🔒 SISTEMA_AUTOBKS_CREATED - NÃO SINCRONIZAR
       `,
       start: {
         date: eventDetails.check_in_date,
@@ -161,12 +163,16 @@ class GoogleCalendarService {
         requestBody: {
           id: uniqueChannelId,  // ID único para evitar conflitos
           type: 'web_hook',
-          address: `${process.env.API_BASE_URL}/api/integrations/google/webhook`, // A URL do seu webhook
+          address: `${process.env.GOOGLE_REDIRECT_URI}/api/integrations/google/webhook`, // A URL do seu webhook
         },
       });
       
       const { id, resourceId, expiration } = response.data;
       console.log("Monitoramento do calendário iniciado/renovado:", response.data);
+      // Busca e faz console.log do perfil do usuário na tabela 'profiles' baseado no userId
+      const usersRepository = require('../repository/usersRepository');
+      const profile = await usersRepository.getProfile(userId);
+      console.log('Perfil completo retornado da tabela profiles:', profile);
 
       // 4. SALVAMOS os novos IDs no banco para podermos pará-lo no futuro
       console.log(`💾 Salvando watch info - userId: ${userId}, resourceId: ${resourceId}`);
@@ -213,19 +219,42 @@ class GoogleCalendarService {
       return;
     }
 
-   
+    console.log(`Sincronização: Encontrados ${events.length} eventos para processar.`);
+    
+    // Set para rastrear eventos já processados nesta execução
+    const processedEvents = new Set();
     
     for (const event of events) {
+      // Evita processar o mesmo evento múltiplas vezes
+      if (processedEvents.has(event.id)) {
+        console.log(`Evento ${event.id} já foi processado nesta execução. Pulando...`);
+        continue;
+      }
+      processedEvents.add(event.id);
       try {
         // --- LÓGICA DE DECISÃO ---
+        console.log(`Processando evento ${event.id}: status=${event.status}, summary="${event.summary}"`);
 
         if (event.status === 'cancelled') {
           // CENÁRIO 1: O EVENTO FOI DELETADO NO GOOGLE
-          console.log(`Evento ${event.id} foi cancelado. Tentando remover do sistema...`);
-          // Chama o repositório para deletar a reserva correspondente
-          await BookingRepository.deleteByGoogleEventId(event.id); 
+          console.log(`Evento ${event.id} foi cancelado. Tentando cancelar reserva no sistema...`);
+          // Chama o repositório para cancelar a reserva correspondente
+          const result = await BookingRepository.cancelBookingByGoogleEvent(event.id);
+          
+          if (result === null) {
+            console.log(`Evento ${event.id} não possui reserva associada no sistema (evento criado manualmente).`);
+          } else {
+            console.log(`Reserva cancelada com sucesso para o evento ${event.id}.`);
+          }
+         
           // 'continue' pula para o próximo evento do loop
           continue; 
+        }
+
+        // --- VERIFICAÇÃO DE EVENTOS CRIADOS PELO SISTEMA ---
+        if (event.description && event.description.includes('🔒 SISTEMA_AUTOBKS_CREATED - NÃO SINCRONIZAR')) {
+          console.log(`Evento ${event.id} foi criado pelo sistema AutoBooks. Ignorando sincronização.`);
+          continue; // Pula este evento
         }
 
         // CENÁRIO 2: O EVENTO FOI CRIADO OU ATUALIZADO

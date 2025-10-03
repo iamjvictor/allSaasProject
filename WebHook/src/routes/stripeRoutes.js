@@ -20,38 +20,38 @@ router.post(
 router.post(
   '/create-subscription', 
   express.json(), 
-  StripeController.createSubscription
+  StripeController.createSubscription.bind(StripeController)
 );
 
 router.post(
   '/create-onboarding', 
   express.json(), 
-  StripeController.createOnboarding
+  StripeController.createOnboarding.bind(StripeController)
 );
 
 router.post(
   '/cancel-subscription', 
   express.json(), 
-  StripeController.cancelSubscription
+  StripeController.cancelSubscription.bind(StripeController)
 );
 
 router.post(
   '/create-portal-session', // O URL que o seu frontend irá chamar
   express.json(), // Garante que só utilizadores autenticados podem aceder
-  StripeController.createPortalSession         // A função do seu controller que será executada
+  StripeController.createPortalSession.bind(StripeController)         // A função do seu controller que será executada
 );
 
 
 router.get(
   '/balance', 
   express.json(),
-  StripeController.getBalance
+  StripeController.getBalance.bind(StripeController)
 );
 
 router.get(
   '/account-status/:userId', 
   express.json(),
-  StripeController.checkAccountStatus
+  StripeController.checkAccountStatus.bind(StripeController)
 );
 
 module.exports = router;
