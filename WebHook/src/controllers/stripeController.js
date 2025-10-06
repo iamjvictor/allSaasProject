@@ -851,6 +851,7 @@ class StripeController {
               quantity: 1,
             },
           ],
+          allow_promotion_codes: true,
           // URLs para onde o utilizador será redirecionado
           success_url: `${process.env.FRONTEND_URL}/onboarding/planos?showUploadStep=true`,
           cancel_url: `${process.env.FRONTEND_URL}/onboarding/planos`, // Volta para a página de planos

@@ -203,70 +203,70 @@ class DeviceController {
 }
 
 // Interface de linha de comando
-async function main() {
-  const controller = new DeviceController();
-  const args = process.argv.slice(2);
-  
-  if (args.length === 0) {
-    console.log('📋 Uso:');
-    console.log('  node device-controller.js list                    - Lista dispositivos');
-    console.log('  node device-controller.js start <device-id>       - Inicia dispositivo específico');
-    console.log('  node device-controller.js start-all               - Inicia todos os dispositivos');
-    console.log('  node device-controller.js status                  - Mostra status dos dispositivos');
-    console.log('  node device-controller.js info <device-id>        - Mostra informações detalhadas');
-    console.log('  node device-controller.js send <device-id> <to> <message> - Envia mensagem');
-    return;
-  }
+  async function main() {
+    const controller = new DeviceController();
+    const args = process.argv.slice(2);
+    
+    if (args.length === 0) {
+      console.log('📋 Uso:');
+      console.log('  node device-controller.js list                    - Lista dispositivos');
+      console.log('  node device-controller.js start <device-id>       - Inicia dispositivo específico');
+      console.log('  node device-controller.js start-all               - Inicia todos os dispositivos');
+      console.log('  node device-controller.js status                  - Mostra status dos dispositivos');
+      console.log('  node device-controller.js info <device-id>        - Mostra informações detalhadas');
+      console.log('  node device-controller.js send <device-id> <to> <message> - Envia mensagem');
+      return;
+    }
 
-  
-  const command = args[0];
+    
+    const command = args[0];
 
-  switch (command) {
-    case 'list':
-      controller.listDevices();
-      break;
-      
-    case 'start':
-      if (args[1]) {
-        await controller.startSingleDevice(args[1]);
-      } else {
-        console.log('❌ Especifique o ID do dispositivo');
-      }
-      break;
-      
-    case 'start-all':
-      await controller.startAllDevices();
-      break;
-      
-    case 'status':
-      controller.showDetailedStatus();
-      break;
-      
-    case 'info':
-      if (args[1]) {
-        controller.showDeviceInfo(args[1]);
-      } else {
-        console.log('❌ Especifique o ID do dispositivo');
-      }
-      break;
-      
-    case 'send':
-      if (args.length >= 4) {
-        const deviceId = args[1];
-        const to = args[2];
-        const message = args[3];
-        const success = await controller.sendMessage(deviceId, to, message);
-        console.log(success ? '✅ Mensagem enviada' : '❌ Erro ao enviar mensagem');
-      } else {
-        console.log('❌ Uso: send <device-id> <to> <message>');
-      }
-      break;
-      
-    default:
-      console.log(`❌ Comando desconhecido: ${command}`);
+    switch (command) {
+      case 'list':
+        controller.listDevices();
+        break;
+        
+      case 'start':
+        if (args[1]) {
+          await controller.startSingleDevice(args[1]);
+        } else {
+          console.log('❌ Especifique o ID do dispositivo');
+        }
+        break;
+        
+      case 'start-all':
+        await controller.startAllDevices();
+        break;
+        
+      case 'status':
+        controller.showDetailedStatus();
+        break;
+        
+      case 'info':
+        if (args[1]) {
+          controller.showDeviceInfo(args[1]);
+        } else {
+          console.log('❌ Especifique o ID do dispositivo');
+        }
+        break;
+        
+      case 'send':
+        if (args.length >= 4) {
+          const deviceId = args[1];
+          const to = args[2];
+          const message = args[3];
+          const success = await controller.sendMessage(deviceId, to, message);
+          console.log(success ? '✅ Mensagem enviada' : '❌ Erro ao enviar mensagem');
+        } else {
+          console.log('❌ Uso: send <device-id> <to> <message>');
+        }
+        break;
+        
+      default:
+        console.log(`❌ Comando desconhecido: ${command}`);
+    }
+    
   }
-  
-}
 
 if (require.main === module) {
   main().catch(console.error);

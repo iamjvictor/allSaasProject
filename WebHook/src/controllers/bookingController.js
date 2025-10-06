@@ -15,10 +15,12 @@ class BookingController{
           const {
               user_id,
               lead_whatsapp_number,
-              room_type_id, //ela deve re
+              room_type_id, 
               check_in_date, 
               check_out_date,
-              total_price //calcular isso, buscando a diaria do quarto e multiplicando pela quantidade de diarias
+              total_price,
+              customer_email,
+              customer_name 
           } = req.body;
 
           // 1. Encontra ou cria o lead para garantir que ele existe
@@ -34,6 +36,8 @@ class BookingController{
               checkInDate: check_in_date,
               checkOutDate: check_out_date,
               totalPrice: total_price,
+              customerEmail: customer_email,
+              customerName: customer_name,
               //paymentIntent.id, // Liga a reserva à intenção de pagamento
           };
           const pendingBooking = await BookingRepository.createPendingBooking(bookingData);
@@ -77,7 +81,7 @@ class BookingController{
           const paymentUrl = checkoutResult.paymentUrl;
 
           await BookingRepository.updatePaymentInfo(pendingBooking, paymentId);
-          await LeadRepository.updateLeadStatus(user_id, lead_whatsapp_number, 'quente');
+          await LeadRepository.updateLeadStatus(user_id, lead_whatsapp_number,customer_name,customer_email, 'quente');
           res.status(201).json({ message: "Pré-reserva criada com sucesso!", bookingId: pendingBooking, paymentUrl: paymentUrl });
           
         }catch (err) {

@@ -118,12 +118,12 @@ class LeadsRepository {
   /**
    * Atualiza o status de um lead específico.
    */
-  async updateLeadStatus(userId, whatsappNumber, newStatus) {
+  async updateLeadStatus(userId, whatsappNumber, customerName, customerEmail, newStatus) {
     console.log(`🔍 [DEBUG LEAD] Atualizando status para userId: ${userId}, whatsapp: ${whatsappNumber}, status: ${newStatus}`);
     
     const { data, error } = await supabase
       .from('leads')
-      .update({ status: newStatus })
+      .update({ status: newStatus, name: customerName, email: customerEmail })
       .match({ user_id: userId, contact_whatsapp: whatsappNumber })
       .select()
       .single();

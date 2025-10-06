@@ -228,6 +228,7 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
 
   setupMessageHandler(sock, deviceConfig) {
     sock.ev.on('messages.upsert', async (m) => {
+      const received= Date.now();
       const msg = m.messages[0];
       if (msg.key.fromMe) {
           console.log(`📤 Eu enviei: ${msg.message?.conversation || JSON.stringify(msg.message)}`);
@@ -267,7 +268,8 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
         this.addToChatHistory(whatsappNumber, 'assistant', aiResponse);
 
         await sock.sendMessage(messageId, { text: aiResponse });
-
+        const sent = Date.now();
+        console.log(`🔍 [DEBUG] Tempo de resposta da IA: ${sent - received}ms`);
       } catch (error) {
         console.error(`❌ ${deviceConfig.name} - Erro:`, error.message);
         await sock.sendMessage(messageId, { 
@@ -488,6 +490,7 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
   }
 
   async _handleIncomingMessage(sock, deviceConfig, msg) {
+    const received= Date.now();
     const from = msg.key.senderPn;
     const userQuestion = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
     const messageId = msg.key.remoteJid;
@@ -526,7 +529,8 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
       
       console.log(`[INFO] [${deviceConfig.id}] 📤 Enviando resposta da IA para ${from}`);
       await sock.sendMessage(messageId, { text: aiResponse });
-
+      const sent = Date.now();
+      console.log(`🔍 [DEBUG] Tempo de resposta da IA: ${sent - received}ms`);
     } catch (error) {
       console.error(`[ERROR] [${deviceConfig.id}] ❌ Erro ao processar mensagem com IA: ${error.message}`);
       await sock.sendMessage(messageId, { text: 'Opa, tivemos um problema com a IA. Tente novamente.' });
