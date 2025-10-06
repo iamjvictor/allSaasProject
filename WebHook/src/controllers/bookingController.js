@@ -41,7 +41,9 @@ class BookingController{
               //paymentIntent.id, // Liga a reserva à intenção de pagamento
           };
           const pendingBooking = await BookingRepository.createPendingBooking(bookingData);
-          
+          if (pendingBooking.error) {
+            return res.status(400).json({ message: pendingBooking.error });
+          }
           // 4. Gera o link de pagamento usando o serviço
           let checkoutResult;
           try {
@@ -81,7 +83,7 @@ class BookingController{
           const paymentUrl = checkoutResult.paymentUrl;
 
           await BookingRepository.updatePaymentInfo(pendingBooking, paymentId);
-          await LeadRepository.updateLeadStatus(user_id, lead_whatsapp_number,customer_name,customer_email, 'quente');
+          await LeadRepository.updateLeadStatus(user_id, lead_whatsapp_number, 'quente',customer_name,customer_email);
           res.status(201).json({ message: "Pré-reserva criada com sucesso!", bookingId: pendingBooking, paymentUrl: paymentUrl });
           
         }catch (err) {
@@ -211,12 +213,12 @@ class BookingController{
     async  getAvailabilityReport(req, res) {
   // 1. Busca todos os tipos de quarto do hotel
     const { userId } = req.params; // ou req.user.id vindo do middleware
-    const { checkIn: checkInDate, checkOut: checkOutDate, leadWhatsappNumber: lead_whatsapp_number } = req.body || req.query;
+    const { checkIn: checkInDate, checkOut: checkOutDate, leadWhatsappNumber: lead_whatsapp_number, customerName: customer_name, customerEmail: customer_email } = req.body || req.query;
     
     console.log("🔍 [DEBUG] req.params:", req.params);
     console.log("🔍 [DEBUG] req.body:", req.body);
     console.log("🔍 [DEBUG] req.query:", req.query);
-    console.log("🔍 [DEBUG] Parâmetros extraídos:", { userId, checkInDate, checkOutDate, lead_whatsapp_number });
+    console.log("🔍 [DEBUG] Parâmetros extraídos:", { userId, checkInDate, checkOutDate, lead_whatsapp_number, customer_name, customer_email });
     
     const allRoomTypes = await roomRepository.getRoomsByUserId(userId);
     
