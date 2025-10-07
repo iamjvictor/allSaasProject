@@ -229,7 +229,7 @@ app.delete('/chat-history', async (req, res) => {
 
 app.listen(4000, async () => {
   console.log('🚀 API de cadastro rodando na porta 4000');
-  
+  console.log('Versão 1.0.0 - 06/10 - 22:25');
   // Reconectar todos os dispositivos automaticamente ao iniciar o servidor
   try {
     console.log('🔄 Iniciando reconexão automática de dispositivos...');
