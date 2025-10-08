@@ -28,7 +28,11 @@ const documentChunksRoutes = require('./src/routes/documentChunkRoutes');
 const deviceRoutes = require('./src/routes/deviceRoutes');
 const stripeRoutes = require('./src/routes/stripeRoutes');
 
+// Configuração de CORS para permitir requisições do frontend em produção
 app.use(cors());
+
+// Middleware para lidar com requisições OPTIONS (preflight)
+
 app.use('/api/stripe', stripeRoutes);
 app.use(express.json());
 

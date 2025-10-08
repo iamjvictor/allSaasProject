@@ -166,6 +166,7 @@ class GoogleCalendarService {
           address: `${process.env.GOOGLE_REDIRECT_URI}/api/integrations/google/webhook`, // A URL do seu webhook
         },
       });
+      console.log("Response do watch:", response.data);
       
       const { id, resourceId, expiration } = response.data;
       console.log("Monitoramento do calendário iniciado/renovado:", response.data);
