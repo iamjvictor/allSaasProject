@@ -67,15 +67,15 @@ class GoogleCalendarService {
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     // 4. MONTA O OBJETO DO EVENTO COM OS DETALHES DA RESERVA
     const checkOutDate = new Date(eventDetails.check_out_date);
-    checkOutDate.setDate(checkOutDate.getDate() + 2);
+    console.log("vem assim:", checkOutDate)
+    checkOutDate.setDate(checkOutDate.getDate() +1);
+    console.log("adicionei um dia para o google", checkOutDate);
 
     // Formata a data para o formato YYYY-MM-DD
     const year = checkOutDate.getFullYear();
     const month = String(checkOutDate.getMonth() + 1).padStart(2, '0'); // Os meses são de 0 a 11
     const day = String(checkOutDate.getDate()).padStart(2, '0');
     const nextDay = `${year}-${month}-${day}`;
-    
-
     const event = {
       summary: `Reserva: ${eventDetails.guest_name || 'Hóspede'}`,
       description: `
@@ -94,15 +94,19 @@ class GoogleCalendarService {
       `,
       start: {
         date: eventDetails.check_in_date,
+        timeZone: 'America/Sao_Paulo'
       },
       end: {
         date: nextDay,
+        timeZone: 'America/Sao_Paulo'
       },
       // Adiciona o email do hóspede como um convidado no evento, se existir
       attendees: eventDetails.lead_email ? [{ email: eventDetails.lead_email }] : [],
     };    
     try {
-      // 5. INSERE O EVENTO NA AGENDA PRINCIPAL ('primary') DO DONO DO HOTEL
+      console.log("nextday", nextDay)
+      console.log("Evento a ser criado no Google Calendar:", event);
+
       const createdEvent = await calendar.events.insert({
         auth: oauth2Client,
         calendarId: 'primary',

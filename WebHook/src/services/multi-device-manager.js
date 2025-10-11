@@ -332,7 +332,7 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
     const sessionDirs = (await fs.readdir(this.sessionsDir, { withFileTypes: true }))
       .filter(dirent => dirent.isDirectory())
       .map(dirent => dirent.name);
-
+    console.log(`🔍 [DEBUG] sessionDirs: ${sessionDirs}`);
     if (sessionDirs.length === 0) {
       console.log('[INFO] ℹ️ Nenhuma sessão salva encontrada para reconectar.');
       return;

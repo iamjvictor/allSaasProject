@@ -29,7 +29,23 @@ const deviceRoutes = require('./src/routes/deviceRoutes');
 const stripeRoutes = require('./src/routes/stripeRoutes');
 
 // Configuração de CORS para permitir requisições do frontend em produção
-app.use(cors());
+const allowedOrigins = [
+  "https://www.autobooks.com.br",
+  "https://autobooks.com.br"
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true, // permite envio de cookies/autenticação
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+}));
 
 // Middleware para lidar com requisições OPTIONS (preflight)
 
