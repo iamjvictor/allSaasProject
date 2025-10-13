@@ -16,8 +16,7 @@ class PaymentService {
         throw new Error("ID do usuário dono do hotel é necessário para criar o pagamento com Stripe Connect.");
       }
 
-      const PLATFORM_FEE_PERCENTAGE = 0; // 20%  
-      // 1. Buscar o perfil do dono do hotel para obter o stripe_account_id
+   
       const hotelOwnerProfile = await usersRepository.getProfile(booking.userId); // Assumindo método findByUserId
       
       if (!hotelOwnerProfile || !hotelOwnerProfile.stripe_id) {
@@ -61,17 +60,13 @@ class PaymentService {
 
       // 2. Calcular o preço total em centavos
       const calculatedTotalPriceCents = Math.round(booking.totalPrice * 100);
-
-      // 3. Calcular sua comissão (application_fee_amount) em centavos
-      const applicationFeeAmount = Math.round(calculatedTotalPriceCents * PLATFORM_FEE_PERCENTAGE);
-
       // As URLs de sucesso e cancelamento
       const successUrl = `${process.env.FRONTEND_URL}/payment-status?status=success&booking_id=${pendingID}`;
       const cancelUrl = `${process.env.FRONTEND_URL}/payment-status?status=cancelled&booking_id=${pendingID}`;
        
       // 4. Cria a Sessão de Checkout com Stripe Connect (expira em 15 minutos)
       const expiresAt = Math.floor(Date.now() / 1000) + (30 * 60); // 15 minutos em segundos
-      
+    
       const session = await stripe.checkout.sessions.create({
         payment_method_types: ['card'],
         line_items: [
@@ -80,7 +75,7 @@ class PaymentService {
               currency: 'brl',
               product_data: {
                 name: `Reserva: ${roomType.name}`,
-                description: `Hospedagem de ${booking.check_in_date} a ${booking.check_out_date}`,
+                description: `Hospedagem de ${booking.checkInDate} a ${booking.checkOutDate}`,
               },
               unit_amount: calculatedTotalPriceCents,
             },
@@ -96,13 +91,8 @@ class PaymentService {
           hotel_owner_user_id: booking.userId, // ID do dono do hotel na sua plataforma
           hotel_owner_stripe_account_id: hotelOwnerStripeAccountId, // ID da conta conectada
         },
-        // --- CONFIGURAÇÃO DO STRIPE CONNECT ---
-        payment_intent_data: {
-          application_fee_amount: applicationFeeAmount, // Sua comissão em centavos
-          transfer_data: {
-            destination: hotelOwnerStripeAccountId, // O ID da conta conectada do dono do hotel
-          },
-        },
+      }, {
+        stripeAccount: hotelOwnerStripeAccountId, // 👈 ESSENCIAL
       });
 
       console.log(`✅ Sessão de Checkout gerada para a reserva ${pendingID}. ID: ${session.id}. URL: ${session.url}`);

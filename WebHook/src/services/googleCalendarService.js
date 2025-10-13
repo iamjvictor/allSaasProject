@@ -66,16 +66,22 @@ class GoogleCalendarService {
     // 3. CRIA A INSTÂNCIA DA API DO CALENDÁRIO JÁ AUTENTICADA
     const calendar = google.calendar({ version: 'v3', auth: oauth2Client });
     // 4. MONTA O OBJETO DO EVENTO COM OS DETALHES DA RESERVA
-    const checkOutDate = new Date(eventDetails.check_out_date);
-    console.log("vem assim:", checkOutDate)
-    checkOutDate.setDate(checkOutDate.getDate() +1);
-    console.log("adicionei um dia para o google", checkOutDate);
+    const parts = eventDetails.check_out_date.split('-');
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1; // Mês em JS é 0-11
+    const day = parseInt(parts[2], 10);
 
-    // Formata a data para o formato YYYY-MM-DD
-    const year = checkOutDate.getFullYear();
-    const month = String(checkOutDate.getMonth() + 1).padStart(2, '0'); // Os meses são de 0 a 11
-    const day = String(checkOutDate.getDate()).padStart(2, '0');
-    const nextDay = `${year}-${month}-${day}`;
+    // 2. Cria a data explicitamente em UTC para não haver confusão
+    const checkOutDateUTC = new Date(Date.UTC(year, month, day));
+    console.log("Data criada em UTC:", checkOutDateUTC.toISOString());
+
+    // 3. Adiciona um dia usando a função UTC, que não é afetada pelo fuso local
+    checkOutDateUTC.setUTCDate(checkOutDateUTC.getUTCDate() + 1);
+    console.log("Data com +1 dia em UTC:", checkOutDateUTC.toISOString());
+
+    // 4. Formata a data de volta para YYYY-MM-DD da forma mais segura (a partir do UTC)
+    const nextDay = checkOutDateUTC.toISOString().split('T')[0];
+
     const event = {
       summary: `Reserva: ${eventDetails.guest_name || 'Hóspede'}`,
       description: `

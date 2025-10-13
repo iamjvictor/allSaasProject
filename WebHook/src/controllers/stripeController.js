@@ -17,26 +17,35 @@ const usersRepository = require('../repository/usersRepository');
 
 
 // Pegue o "Segredo do endpoint" que a Stripe te deu e coloque no seu .env
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
 
 class StripeController {
   async handleWebhook(req, res) {
     // A assinatura vem no header da requisição da Stripe
+ 
     const sig = req.headers['stripe-signature'];
+    const connectSecret = process.env.STRIPE_CONNECT_ACCOUNT_SECRET;
+    const platformSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
     let event;
-    
 
+    // Tentativa 1: Assumir que é um evento Connect (mais provável para este endpoint)
     try {
-      // 1. VERIFICAÇÃO DE SEGURANÇA:
-      // Confirma se a notificação veio mesmo da Stripe, usando o segredo.
-      // É por isso que precisamos do 'req.body' bruto (raw).
-      event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
-     
-
+      event = stripe.webhooks.constructEvent(req.body, sig, connectSecret);
+      console.log('✅ Verificado com sucesso como um evento de Conta Conectada.');
     } catch (err) {
-      console.error(`❌ Erro na verificação da assinatura do webhook: ${err.message}`);
-      // Informa à Stripe que houve um problema.
-      return res.status(400).send(`Webhook Error: ${err.message}`);
+      // Se a primeira tentativa falhar, não é o fim do mundo.
+      console.warn(`⚠️ Falha ao verificar como evento Connect: ${err.message}. Tentando como evento da Plataforma...`);
+
+      // Tentativa 2: Tentar como um evento da Plataforma
+      try {
+        event = stripe.webhooks.constructEvent(req.body, sig, platformSecret);
+        console.log('✅ Verificado com sucesso como um evento da Plataforma.');
+      } catch (secondErr) {
+        // Se a segunda tentativa também falhar, aí sim é um erro real.
+        console.error(`❌ Falha em ambas as verificações. Erro final: ${secondErr.message}`);
+        return res.status(400).send(`Webhook signature verification failed.`);
+      }
     }
 
     // 2. LIDAR COM O EVENTO DE SUCESSO
@@ -618,8 +627,7 @@ class StripeController {
         });
         accountId = account.id;
 
-        console.log(`Conta Stripe criada com sucesso. Account ID: ${account}`);
-
+   
         // PASSO CRÍTICO: Salvar o novo ID da conta na sua tabela 'profiles'.
         const { error: updateError } = await supabase
           .from('profiles')
