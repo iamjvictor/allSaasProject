@@ -31,7 +31,8 @@ const stripeRoutes = require('./src/routes/stripeRoutes');
 // Configuração de CORS para permitir requisições do frontend em produção
 const allowedOrigins = [
   "https://www.autobooks.com.br",
-  "https://autobooks.com.br"
+  "https://autobooks.com.br",
+  "http://localhost:3000"
 ];
 
 app.use(cors({

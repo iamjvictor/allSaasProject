@@ -1,5 +1,6 @@
 const makeWASocket = require('@whiskeysockets/baileys').default;
-const { DisconnectReason, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+const { DisconnectReason, useMultiFileAuthState, Browsers, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const pino = require('pino');
 const axios = require('axios');
 const qrcode = require('qrcode-terminal');
 
@@ -115,28 +116,29 @@ class WhatsAppDeviceManager {
     return stats;
   }
 
- async prepareSessionDir(deviceConfig, forceNew) {
-  const deviceSessionDir = path.join(this.sessionsDir, deviceConfig.whatsappNumber);
-
-  if (!fsSync.existsSync(deviceSessionDir)) {
-    fsSync.mkdirSync(deviceSessionDir, { recursive: true });
-  }
-
-  if (forceNew) {
-    try {
+  async prepareSessionDir(deviceConfig, forceNew = false) {
+    const deviceSessionDir = path.join(this.sessionsDir, deviceConfig.whatsappNumber);
+  
+    // Se existir e forceNew for true → apaga a pasta
+    if (forceNew && fsSync.existsSync(deviceSessionDir)) {
+      console.log(`🧹 Limpando sessão anterior de ${deviceConfig.whatsappNumber}`);
       await fs.rm(deviceSessionDir, { recursive: true, force: true });
-      await fs.mkdir(deviceSessionDir, { recursive: true });
-       const configPath = path.join(deviceSessionDir, 'device_config.json');
-      await fs.writeFile(configPath, JSON.stringify(deviceConfig, null, 2));
-    console.log(`[INFO] [${deviceId}] ✅ Ficheiro de configuração salvo com sucesso em ${configPath}`);
-      console.log(`🧹 Old session removed for ${deviceConfig.name}`);
-    } catch (err) {
-      console.warn(`⚠️ Could not remove old session (may not exist): ${err.message}`);
     }
+  
+    // Garante que a pasta existe
+    await fs.mkdir(deviceSessionDir, { recursive: true });
+  
+    // Cria ou atualiza o device_config.json SEM apagar nada
+    const configPath = path.join(deviceSessionDir, 'device_config.json');
+    await fs.writeFile(configPath, JSON.stringify(deviceConfig, null, 2));
+  
+    // Log de verificação
+    console.log(`📁 Pasta de sessão pronta em: ${deviceSessionDir}`);
+    console.log(`📄 Arquivos existentes:`, fsSync.readdirSync(deviceSessionDir));
+  
+    return deviceSessionDir;
   }
-
-  return deviceSessionDir;
-}
+  
 
 setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connectionTimeout) {
   let qrGenerated = false;
@@ -158,14 +160,16 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
         const qrImage = await QRCode.toDataURL(qr);
         console.log(`🔍 [DEBUG] QR Code convertido para base64:`, qrImage.substring(0, 100) + '...');
         require('qrcode-terminal').generate(qr, { small: true });
-        
-        // Timeout de 15 segundos para fechar socket se ninguém ler o QR
+    
+        // Timeout de 30s para expirar QR (não fecha Promise)
         qrTimeout = setTimeout(() => {
-          console.log(`⏰ QR Code expirado após 15 segundos para ${deviceConfig.name}`);
+          console.log(`⏰ QR Code expirado após 30 segundos para ${deviceConfig.name}`);
           sock.logout().catch(() => {});
-          reject(new Error('QR Code expirado. Ninguém leu o código em 15 segundos.'));
+          reject(new Error('QR Code expirado. Ninguém leu o código em 30 segundos.'));
         }, 30000);
-        
+    
+        // 👉 Resolve imediatamente com o QR em base64 para o controller devolver ao frontend
+        if (device) device.qrImage = qrImage;
         resolve(qrImage);
       } catch (qrError) {
         console.error(`❌ [ERROR] Erro ao converter QR Code:`, qrError);
@@ -176,12 +180,17 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
     // 🔹 Conexão fechada
     if (connection === 'close') {
       if (device) device.connected = false;
-      const reason = (lastDisconnect.error)?.output?.statusCode;
-      const shouldReconnect = reason !== DisconnectReason.loggedOut;
+      const statusCode = (lastDisconnect?.error)?.output?.statusCode;
+      const failureReason = (lastDisconnect?.error)?.data?.reason; // e.g. '405'
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut && failureReason !== '405';
 
-      if (reason === DisconnectReason.loggedOut) {
+      if (statusCode === DisconnectReason.loggedOut) {
         clearTimeout(connectionTimeout);
         reject(new Error('Dispositivo desconectado pelo usuário.'));
+      } else if (failureReason === '405') {
+        console.warn(`[Baileys] Conexão recusada (405). Não reconectar automaticamente.`);
+        clearTimeout(connectionTimeout);
+        reject(new Error('Conexão recusada (405). Tente novamente em alguns minutos.'));
       } else if (shouldReconnect) {
         this.connectDevice(deviceConfig, false).catch(err => {
           console.error(`[Reconexão Automática] Erro ao tentar reconectar ${deviceConfig.name}: ${err.message}`);
@@ -285,22 +294,49 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
       let connectionTimeout = null;
       
       try {
-        // Previne conexões duplicadas
-        await this.preventDuplicateConnections(deviceConfig);
+       // logo no começo do try:
+      if (forceNew) {
+        console.log(`♻️ Limpando sessão anterior para ${deviceConfig.whatsappNumber}`);
+        const sessionDir = path.join(this.sessionsDir, deviceConfig.whatsappNumber);
+        await fs.rm(sessionDir, { recursive: true, force: true });
+      }
 
-        const deviceSessionDir = await this.prepareSessionDir(deviceConfig, forceNew);
+// Previne conexões duplicadas
+await this.preventDuplicateConnections(deviceConfig);
+
+const deviceSessionDir = await this.prepareSessionDir(deviceConfig, false);
+
+
+// DEBUG: teste de escrita simples (verifica permissão)
+        try {
+          await fs.writeFile(path.join(deviceSessionDir, 'debug_write_test.txt'), 'ok');
+          console.log('✅ Debug write OK');
+        } catch (err) {
+          console.error('❌ Debug write failed:', err.message);
+        }
+
         const { state, saveCreds } = await useMultiFileAuthState(deviceSessionDir);
-    
+        // Garante que estamos usando a versão mais recente suportada do WhatsApp Web
+        const { version, isLatest } = await fetchLatestBaileysVersion();
+        console.log('[Baileys] Using WA Web version:', version, 'isLatest:', isLatest);
+        console.log('🔍 [DEBUG] state:', state ? 'object' : state);
+        console.log('🔍 [DEBUG] saveCreds:', saveCreds ? saveCreds.toString().slice(0,200) : saveCreds);
+
         sock = makeWASocket({
           auth: state,
-          printQRInTerminal: false,
-          // Configurações para evitar timeouts
-          connectTimeoutMs: 60000, // 60 segundos
-          keepAliveIntervalMs: 30000, // 30 segundos
-          retryRequestDelayMs: 250, // 250ms entre tentativas
-          maxMsgRetryCount: 5, // Máximo 5 tentativas
-          defaultQueryTimeoutMs: 60000, // 60 segundos para queries
+          version,
+          printQRInTerminal: true, // habilita debug do QR no terminal
+          browser: Browsers.appropriate('Desktop'),
+          logger: pino({ level: 'info' }),
+
+          connectTimeoutMs: 60000,
+          keepAliveIntervalMs: 30000,
+          retryRequestDelayMs: 500,
+          maxMsgRetryCount: 5,
+          defaultQueryTimeoutMs: 60000,
         }); 
+
+        sock.ev.on('creds.update', saveCreds);
 
         // Timeout de conexão (30 segundos para gerar QR)
         connectionTimeout = setTimeout(() => {
