@@ -8,6 +8,7 @@ const paymentRepository = require('../repository/paymentRepository');
 const usersRepository = require('../repository/usersRepository');
 const emailService = require('../services/emailService');
 const DeviceController = require('../controllers/deviceController');
+
 class BookingController{
 
     async createBookingWithPaymentLink(req, res) {
@@ -282,6 +283,39 @@ class BookingController{
       console.log("🔍 [DEBUG] Email de atendimento humano enviado com sucesso!");
       res.status(200).json({ message: "Email de atendimento humano enviado com sucesso!" });
     }
+
+    async getBookings(req, res) {
+      try {
+        const userId = req.headers['x-user-id'];
+        const bookings = await BookingRepository.getBookings(userId);
+        
+        // Buscar dados do lead para cada reserva
+        const bookingsWithLeads = await Promise.all(
+          bookings.map(async (booking) => {
+            try {
+              const lead = await LeadRepository.findLeadById(booking.lead_id);
+              return {
+                ...booking,
+                lead: lead || null
+              };
+            } catch (leadError) {
+              console.error(`❌ [ERROR] Erro ao buscar lead ${booking.lead_id}:`, leadError.message);
+              return {
+                ...booking,
+                lead: null
+              };
+            }
+          })
+        );
+        
+        console.log("📋 [DEBUG] Reservas com dados do lead:", bookingsWithLeads.length);
+        console.log("📋 [DEBUG] Reservas com dados do lead:", bookingsWithLeads);
+        res.status(200).json(bookingsWithLeads);
+      } catch (err) {
+        console.error("❌ [ERROR] Erro no getBookings:", err.message);
+        res.status(500).json({ error: "Erro interno do servidor" });
+      }  
+    }      
 }
   
 

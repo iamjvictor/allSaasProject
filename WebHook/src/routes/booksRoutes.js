@@ -11,7 +11,7 @@ router.post('/call-human-agent', apiAuthMiddleware, bookingController.callHumanA
 router.delete('/cancel/:bookingId', bookingController.cancelBooking);
 router.get('/availability', bookingController.checkAvailability);
 router.get('/:userId/availability-report', apiAuthMiddleware, bookingController.getAvailabilityReport);
-
+router.get('/getBookings', apiAuthMiddleware, bookingController.getBookings)
 
 
 

@@ -401,6 +401,21 @@ class BookingRepository {
     console.log(`Reserva ${bookingId} deletada com sucesso`);
   }
 
+  async getBookings(userId) {
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('user_id', userId)
+      .order('check_in_date', { ascending: true });
+
+    if (error) {
+      console.error(`Erro ao buscar reservas do usuário ${userId}:`, error);
+      throw new Error(`Falha ao buscar reservas: ${error.message}`);
+    }
+
+    return data;
+  }
+
 
   
 }

@@ -45,7 +45,7 @@ app.use(cors({
   },
   credentials: true, // permite envio de cookies/autenticação
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-user-id", "x-api-key"],
 }));
 
 // Middleware para lidar com requisições OPTIONS (preflight)
