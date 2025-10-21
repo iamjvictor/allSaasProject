@@ -173,6 +173,7 @@ class StripeController {
     }else if (event.type === 'customer.subscription.updated') {
       const object = event.data.object;
       const subscriptionId = object.id;
+      console.log('object', object);
       console.log('🔍 [WEBHOOK DEBUG] Processando customer.subscription.updated');
       console.log('🔍 [WEBHOOK DEBUG] Subscription ID:', subscriptionId);
       console.log('🔍 [WEBHOOK DEBUG] cancel_at_period_end:', object.cancel_at_period_end);
