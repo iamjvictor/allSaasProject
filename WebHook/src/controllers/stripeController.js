@@ -22,10 +22,18 @@ const usersRepository = require('../repository/usersRepository');
 class StripeController {
   async handleWebhook(req, res) {
     // A assinatura vem no header da requisição da Stripe
+    console.log('🔍 [WEBHOOK DEBUG] Iniciando processamento do webhook...');
+    console.log('🔍 [WEBHOOK DEBUG] Headers recebidos:', JSON.stringify(req.headers, null, 2));
+    console.log('🔍 [WEBHOOK DEBUG] Tipo do corpo:', typeof req.body);
+    console.log('🔍 [WEBHOOK DEBUG] Tamanho do corpo:', req.body ? req.body.length : 'undefined');
  
     const sig = req.headers['stripe-signature'];
     const connectSecret = process.env.STRIPE_CONNECT_ACCOUNT_SECRET;
     const platformSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+    console.log('🔍 [WEBHOOK DEBUG] Assinatura presente:', !!sig);
+    console.log('🔍 [WEBHOOK DEBUG] Connect secret configurado:', !!connectSecret);
+    console.log('🔍 [WEBHOOK DEBUG] Platform secret configurado:', !!platformSecret);
 
     let event;
 
@@ -44,9 +52,13 @@ class StripeController {
       } catch (secondErr) {
         // Se a segunda tentativa também falhar, aí sim é um erro real.
         console.error(`❌ Falha em ambas as verificações. Erro final: ${secondErr.message}`);
+        console.error(`❌ [WEBHOOK DEBUG] Detalhes do erro Connect:`, err.message);
+        console.error(`❌ [WEBHOOK DEBUG] Detalhes do erro Platform:`, secondErr.message);
         return res.status(400).send(`Webhook signature verification failed.`);
       }
     }
+
+    console.log('🔍 [WEBHOOK DEBUG] Evento processado:', event.type);
 
     // 2. LIDAR COM O EVENTO DE SUCESSO
     // Verificamos se o tipo do evento é o que nos interessa: 'checkout.session.completed'
@@ -161,8 +173,55 @@ class StripeController {
     }else if (event.type === 'customer.subscription.updated') {
       const object = event.data.object;
       const subscriptionId = object.id;
-      console.log('escutando o updated');
+      console.log('🔍 [WEBHOOK DEBUG] Processando customer.subscription.updated');
+      console.log('🔍 [WEBHOOK DEBUG] Subscription ID:', subscriptionId);
+      console.log('🔍 [WEBHOOK DEBUG] cancel_at_period_end:', object.cancel_at_period_end);
+      console.log('🔍 [WEBHOOK DEBUG] current_period_end:', object.current_period_end);
+      console.log('🔍 [WEBHOOK DEBUG] cancel_at:', object.cancel_at);
 
+      // Sempre atualizar o current_period_ends_at quando a subscription for atualizada
+      try {
+        // Buscar o usuário pelo subscription_id
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('stripe_subscription_id', subscriptionId)
+          .single();
+
+        if (profileError || !profile) {
+          console.error(`❌ Perfil não encontrado para subscription ${subscriptionId}:`, profileError);
+          return res.status(200).send('OK (Perfil não encontrado)');
+        }
+
+        // Preparar dados para atualização
+        const updateData = {
+          subscription_status: object.status
+        };
+
+        // Se há current_period_end, atualizar
+        if (object.current_period_end) {
+          const currentPeriodEndsAt = new Date(object.current_period_end * 1000).toISOString();
+          updateData.current_period_ends_at = currentPeriodEndsAt;
+          console.log('🔍 [WEBHOOK DEBUG] Atualizando current_period_ends_at para:', currentPeriodEndsAt);
+        }
+
+        // Atualizar o perfil
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update(updateData)
+          .eq('id', profile.id);
+
+        if (updateError) {
+          console.error(`❌ Erro ao atualizar perfil ${profile.id}:`, updateError);
+        } else {
+          console.log(`✅ Perfil ${profile.id} atualizado com status: ${object.status}`);
+        }
+
+      } catch (error) {
+        console.error(`❌ Erro ao processar customer.subscription.updated:`, error);
+      }
+
+      // Se foi cancelado, enviar email de notificação
       if (object.cancel_at_period_end) {
         console.log(`🗑️ Subscription cancelada para customer: ${subscriptionId}`);
         await this.handleSubscriptionCancelation(object.metadata.UserId, object.cancel_at);
