@@ -1095,14 +1095,37 @@ async  cancelSubscription(req, res) {
         return res.status(404).json({ error: 'Conta Stripe Connect não encontrada. Complete o onboarding primeiro.' });
       }
 
-      // 3. Criar link de login para a conta Connect
-      const loginLink = await stripe.accounts.createLoginLink(stripeAccountId);
-
-      // 4. Retorna a URL de login da conta Connect
-      res.status(200).json({ url: loginLink.url });
+      // 3. Tentar criar link de login para a conta Connect
+      try {
+        const loginLink = await stripe.accounts.createLoginLink(stripeAccountId);
+        return res.status(200).json({ 
+          url: loginLink.url,
+          type: 'login'
+        });
+      } catch (loginError) {
+        // 4. Se falhar (conta não finalizada), criar link de onboarding
+        if (loginError.message.includes('not completed onboarding')) {
+          console.log("Conta Connect não finalizada, criando link de onboarding...");
+          
+          const accountLink = await stripe.accountLinks.create({
+            account: stripeAccountId,
+            refresh_url: `${process.env.FRONTEND_URL}/dashboard`,
+            return_url: `${process.env.FRONTEND_URL}/dashboard`,
+            type: 'account_onboarding',
+          });
+          
+          return res.status(200).json({ 
+            url: accountLink.url,
+            type: 'onboarding'
+          });
+        }
+        
+        // 5. Se for outro erro, relançar
+        throw loginError;
+      }
       
     } catch (error) {
-      console.error("Erro ao criar link de login da conta Connect:", error);
+      console.error("Erro ao criar link de acesso da conta Connect:", error);
       res.status(500).json({ error: 'Falha ao aceder à sua conta Stripe Connect.' });
     }
   }    
