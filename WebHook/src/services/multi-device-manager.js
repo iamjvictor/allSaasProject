@@ -30,7 +30,12 @@ class WhatsAppDeviceManager {
 
   // Função para extrair o número do WhatsApp do JID
   extractWhatsAppNumber(jid) {
-    if (!jid) return '';
+    if (!jid) {
+      console.log(`⚠️ [EXTRACT] JID vazio ou nulo`);
+      return '';
+    }
+    
+    console.log(`🔍 [EXTRACT] Processando JID: ${jid}`);
     
     // Verifica se é um JID de WhatsApp individual (termina com @s.whatsapp.net)
     if (jid.endsWith('@s.whatsapp.net')) {
@@ -38,6 +43,12 @@ class WhatsAppDeviceManager {
       const cleanNumber = number.replace(/\D/g, '');
       console.log(`🔍 [EXTRACT] JID WhatsApp: ${jid} -> Number: ${cleanNumber}`);
       return cleanNumber;
+    }
+    
+    // Verifica se é um JID de grupo (termina com @g.us)
+    if (jid.endsWith('@g.us')) {
+      console.log(`⚠️ [EXTRACT] JID de grupo detectado: ${jid}`);
+      return '';
     }
     
     // Se não for um JID de WhatsApp individual, retorna vazio
@@ -257,6 +268,7 @@ setupConnectionEvents(sock, deviceConfig, saveCreds, resolve, reject, connection
       try {
         this.addToChatHistory(whatsappNumber, 'user', userQuestion);
         const chatHistory = this.formatChatHistory(whatsappNumber);
+        console.log(`🔍 [DEBUG] whatsappNumber: ${whatsappNumber}`);
        console.log(`🔍 [DEBUG] chatHistory: ${chatHistory}`);
 
         const pythonResponse = await axios.post(
@@ -527,19 +539,36 @@ const deviceSessionDir = await this.prepareSessionDir(deviceConfig, false);
 
   async _handleIncomingMessage(sock, deviceConfig, msg) {
     const received= Date.now();
-    const from = msg.key.senderPn;
+    const from = msg.key.remoteJid; // Usar remoteJid em vez de senderPn
     const userQuestion = msg.message?.conversation || msg.message?.extendedTextMessage?.text;
     const messageId = msg.key.remoteJid;
     
+    console.log(`🔍 [DEBUG] msg.key:`, JSON.stringify(msg.key, null, 2));
+    console.log(`🔍 [DEBUG] from (remoteJid): ${from}`);
 
     // Se quiser processar também as mensagens enviadas por você, remova o filtro abaixo:
     // if (msg.key.fromMe || !userQuestion) return;
-    if (!userQuestion) return;
+    if (!userQuestion) {
+      console.log(`⚠️ [DEBUG] Mensagem sem texto válido, ignorando...`);
+      return;
+    }
+    
+    // Filtrar mensagens enviadas por nós mesmos
+    if (msg.key.fromMe) {
+      console.log(`⚠️ [DEBUG] Mensagem enviada por nós mesmos, ignorando...`);
+      return;
+    }
 
     
     const whatsappNumber = this.extractWhatsAppNumber(from);
     console.log(`🔍 [DEBUG] whatsappNumber: ${whatsappNumber}`);
    
+    // Validar se o número do WhatsApp foi extraído corretamente
+    if (!whatsappNumber || whatsappNumber.length < 10) {
+      console.log(`❌ [ERROR] Número do WhatsApp inválido: ${whatsappNumber}`);
+      await sock.sendMessage(messageId, { text: 'Desculpe, não consegui identificar seu número de WhatsApp. Tente novamente.' });
+      return;
+    }
 
     try {
       this.addToChatHistory(whatsappNumber, 'user', userQuestion);
