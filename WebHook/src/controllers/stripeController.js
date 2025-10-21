@@ -1034,6 +1034,31 @@ async  cancelSubscription(req, res) {
     }
      const profile = await usersRepository.getProfile(customerId);
      console.log('profile', profile);
+     try {
+      // --- A ETAPA CRUCIAL QUE FALTA ---
+      // 2. Atualiza o perfil na sua base de dados.
+      //    Guardamos a data de cancelamento e podemos, opcionalmente, atualizar o status.
+      console.log(`[DB] A atualizar o perfil ${profile.id} com a data de cancelamento...`);
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ 
+          // A melhor prática é guardar a data exata do cancelamento.
+          // Esta é a mesma data que `current_period_ends_at` neste cenário.
+          current_period_ends_at: cancelAtDate, 
+          // Opcional: pode criar um status customizado para indicar o cancelamento pendente.
+          // subscription_status: 'canceling' 
+        })
+        .eq('id', profile.id);
+  
+      if (updateError) {
+        // Se a atualização falhar, registamos o erro mas continuamos para enviar o e-mail.
+        console.error(`❌ [DB] Erro ao atualizar o perfil ${profile.id}:`, updateError);
+      } else {
+        console.log(`✅ [DB] Perfil ${profile.id} atualizado com sucesso.`);
+      }
+    } catch (error) {
+      console.error(`❌ [DB] Erro ao atualizar o perfil ${profile.id}:`, error);
+    }
      await emailService.sendSubscriptionCancellationNotification(profile.email, profile.full_name, cancelAtDate)
      console.log('Email enviado para:', profile.email);
   }
