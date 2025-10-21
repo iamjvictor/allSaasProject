@@ -206,6 +206,12 @@ class StripeController {
           console.log('🔍 [WEBHOOK DEBUG] Atualizando current_period_ends_at para:', currentPeriodEndsAt);
         }
 
+        // Se foi cancelado (cancel_at_period_end = true), atualizar status para 'cancelled'
+        if (object.cancel_at_period_end) {
+          updateData.subscription_status = 'cancelled';
+          console.log('🔍 [WEBHOOK DEBUG] Assinatura cancelada - atualizando status para cancelled');
+        }
+
         // Atualizar o perfil
         const { error: updateError } = await supabase
           .from('profiles')
@@ -999,7 +1005,7 @@ async  cancelSubscription(req, res) {
     });
     
     console.log(`[STRIPE] Sucesso! A assinatura foi agendada para cancelar. Novo valor de cancel_at_period_end:`, updatedSubscription.cancel_at_period_end);
-
+    
     // Passo 4: Retornar sucesso para o frontend
     res.status(200).json({ success: true, message: 'O seu plano será cancelado no final do período atual.' });
 
@@ -1035,20 +1041,20 @@ async  cancelSubscription(req, res) {
      const profile = await usersRepository.getProfile(customerId);
      console.log('profile', profile);
      try {
-      // --- A ETAPA CRUCIAL QUE FALTA ---
-      // 2. Atualiza o perfil na sua base de dados.
-      //    Guardamos a data de cancelamento e podemos, opcionalmente, atualizar o status.
-      console.log(`[DB] A atualizar o perfil ${profile.id} com a data de cancelamento...`);
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ 
-          // A melhor prática é guardar a data exata do cancelamento.
-          // Esta é a mesma data que `current_period_ends_at` neste cenário.
-          current_period_ends_at: cancelAtDate, 
-          // Opcional: pode criar um status customizado para indicar o cancelamento pendente.
-          // subscription_status: 'canceling' 
-        })
-        .eq('id', profile.id);
+       // --- A ETAPA CRUCIAL QUE FALTA ---
+       // 2. Atualiza o perfil na sua base de dados.
+       //    Guardamos a data de cancelamento e atualizamos o status para 'cancelled'.
+       console.log(`[DB] A atualizar o perfil ${profile.id} com a data de cancelamento...`);
+       const { error: updateError } = await supabase
+         .from('profiles')
+         .update({ 
+           // A melhor prática é guardar a data exata do cancelamento.
+           // Esta é a mesma data que `current_period_ends_at` neste cenário.
+           current_period_ends_at: cancelAtDate,
+           // Atualizar o status para 'cancelled' quando a assinatura for cancelada
+           subscription_status: 'cancelled'
+         })
+         .eq('id', profile.id);
   
       if (updateError) {
         // Se a atualização falhar, registamos o erro mas continuamos para enviar o e-mail.
