@@ -941,54 +941,75 @@ class StripeController {
       res.status(500).json({ error: 'Falha ao iniciar o processo de subscrição.' });
     }
   }
-  async  cancelSubscription(req, res) {
-      
-        try {
-          // Passo 1: Autenticar o usuário a partir do token JWT no cabeçalho Authorization.
-        // 1. Autenticação (como você já tem)
-          const jwt = req.headers.authorization?.split(' ')[1];
-          if (!jwt) return res.status(401).json({ message: "Não autorizado." });
-          
-          const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
-          if (authError || !user) return res.status(401).json({ message: "Token inválido." });
+ // ... (importações do supabase, stripe, etc.)
+
+async  cancelSubscription(req, res) {
+  console.log('--- [API] Recebida requisição para /cancelSubscription ---');
+  
+  try {
+    // Passo 1: Autenticar o utilizador a partir do token
+    const jwt = req.headers.authorization?.split(' ')[1];
+    if (!jwt) {
+      console.warn('[AUTH] Falha: Nenhum token JWT fornecido.');
+      return res.status(401).json({ message: "Não autorizado." });
+    }
     
-        if (!user.id) {
-          return res.status(401).json({ error: 'Não autorizado. Token de usuário inválido ou ausente.' });
-        }
+    const { data: { user }, error: authError } = await supabase.auth.getUser(jwt);
+    if (authError || !user) {
+      console.error('[AUTH] Falha: Token JWT inválido ou expirado.', authError);
+      return res.status(401).json({ message: "Token inválido." });
+    }
+
+    const userId = user.id;
+    console.log(`[AUTH] Sucesso: Utilizador autenticado com o ID: ${userId}`);
+
+    // Passo 2: Buscar o perfil do utilizador para encontrar o ID da assinatura
+    console.log(`[DB] A procurar o perfil para o utilizador: ${userId}`);
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('stripe_subscription_id')
+      .eq('id', userId)
+      .single();
+
+    // Verificação de erro da base de dados
+    if (profileError) {
+      console.error(`[DB] Erro ao buscar o perfil do utilizador ${userId}:`, profileError);
+      return res.status(500).json({ error: 'Erro ao aceder aos dados do perfil.' });
+    }
+
+    console.log(`[DB] Perfil encontrado:`, profile);
+
+    // Verificação se a assinatura existe no nosso sistema
+    if (!profile || !profile.stripe_subscription_id) {
+      console.warn(`[LOGIC] Falha: O perfil do utilizador ${userId} não possui um stripe_subscription_id.`);
+      return res.status(404).json({ error: 'Nenhuma assinatura ativa encontrada para este utilizador.' });
+    }
     
-        // 1. Busca o perfil do utilizador para encontrar o ID da assinatura
-        const { data: profile, error: profileError } = await supabase
-          .from('profiles')
-          .select('stripe_subscription_id')
-          .eq('id', user.id)
-          .single();
-    
-        if (profileError || !profile?.stripe_subscription_id) {
-          return res.status(404).json({ error: 'Nenhuma assinatura ativa encontrada para este utilizador.' });
-        }
-        
-        const subscriptionId = profile.stripe_subscription_id;
-    
-        // 2. Chama a API da Stripe para agendar o cancelamento
-        await stripe.subscriptions.update(subscriptionId, {
-          cancel_at_period_end: true,
-          metadata: {
-            UserId: user.id 
-          }
-        });
-        
-        // O status da assinatura no seu DB será atualizado pelo webhook que a Stripe envia
-        // em resposta a esta chamada, mas é uma boa prática já o atualizar aqui.
-        // O webhook irá confirmar esta mudança.
-    
-        res.status(200).json({ success: true, message: 'O seu plano será cancelado no final do período atual.' });
-    
-      } catch (error) {
-        console.error('Erro ao agendar o cancelamento da assinatura:', error);
-        res.status(500).json({ error: 'Falha ao processar o seu pedido de cancelamento.' });
+    const subscriptionId = profile.stripe_subscription_id;
+    console.log(`[STRIPE] ID da assinatura a ser cancelada: ${subscriptionId}`);
+
+    // Passo 3: Chamar a API da Stripe para agendar o cancelamento
+    console.log(`[STRIPE] A enviar pedido de atualização para a Stripe...`);
+    const updatedSubscription = await stripe.subscriptions.update(subscriptionId, {
+      cancel_at_period_end: true,
+      metadata: {
+        supabaseUserId: userId // Boa prática usar camelCase ou snake_case
       }
+    });
     
+    console.log(`[STRIPE] Sucesso! A assinatura foi agendada para cancelar. Novo valor de cancel_at_period_end:`, updatedSubscription.cancel_at_period_end);
+
+    // Passo 4: Retornar sucesso para o frontend
+    res.status(200).json({ success: true, message: 'O seu plano será cancelado no final do período atual.' });
+
+  } catch (error) {
+    // Captura qualquer erro que aconteça no fluxo
+    console.error('❌ [ERRO CRÍTICO] Erro inesperado ao agendar o cancelamento da assinatura:', error);
+    res.status(500).json({ error: 'Falha ao processar o seu pedido de cancelamento.' });
   }
+}
+
+
   async createLoginLink(req, res) {
     try {
       const { stripeAccountId } = req.body;
