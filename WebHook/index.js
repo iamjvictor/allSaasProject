@@ -50,9 +50,10 @@ app.use(cors({
 
 // Middleware para lidar com requisições OPTIONS (preflight)
 // IMPORTANTE: express.json() deve vir ANTES das rotas para não interferir com webhooks
-app.use(express.json());
+
 
 app.use('/api/stripe', stripeRoutes);
+app.use(express.json());
 
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomRoutes);
