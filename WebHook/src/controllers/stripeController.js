@@ -1081,34 +1081,29 @@ async  cancelSubscription(req, res) {
         return res.status(401).json({ error: 'Não autorizado. Token de usuário inválido ou ausente.' });
       }
 
-      // 2. Busca o perfil do utilizador para encontrar o seu ID de cliente na Stripe
+      // 2. Busca o perfil do utilizador para encontrar o ID da conta Connect
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('stripe_customer_id')
+        .select('stripe_id')
         .eq('id', user.id)
         .single();
 
       if (profileError) throw profileError;
       
-      const customerId = profile?.stripe_customer_id;
-      if (!customerId) {
-        // Este erro pode acontecer se o utilizador nunca tentou subscrever um plano
-        return res.status(404).json({ error: 'Utilizador não encontrado no sistema de pagamentos.' });
+      const stripeAccountId = profile?.stripe_id;
+      if (!stripeAccountId) {
+        return res.status(404).json({ error: 'Conta Stripe Connect não encontrada. Complete o onboarding primeiro.' });
       }
 
-      // 3. Chama a API da Stripe para criar uma sessão do Portal de Faturação
-      const portalSession = await stripe.billingPortal.sessions.create({
-        customer: customerId,
-        // A URL para onde o utilizador será redirecionado após fechar o portal
-        return_url: `${process.env.FRONTEND_URL}/dashboard`,
-      });
+      // 3. Criar link de login para a conta Connect
+      const loginLink = await stripe.accounts.createLoginLink(stripeAccountId);
 
-      // 4. Retorna a URL segura e temporária do portal para o frontend
-      res.status(200).json({ url: portalSession.url });
+      // 4. Retorna a URL de login da conta Connect
+      res.status(200).json({ url: loginLink.url });
       
     } catch (error) {
-      console.error("Erro ao criar sessão do portal da Stripe:", error);
-      res.status(500).json({ error: 'Falha ao aceder à gestão da sua conta.' });
+      console.error("Erro ao criar link de login da conta Connect:", error);
+      res.status(500).json({ error: 'Falha ao aceder à sua conta Stripe Connect.' });
     }
   }    
   async disconnectDevice(profiles) {
